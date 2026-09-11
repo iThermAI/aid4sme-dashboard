@@ -181,6 +181,7 @@ const en = {
   },
   blocker: {
     missing_fields: 'Enter the {f}.', camera_checking: 'Checking {c}…', camera_offline: '{c} ({ip}) is not responding.',
+    camera_auth: '{c} ({ip}) rejected the user name or password. Logins to it are paused so its account is not locked; correct it in Settings and press Test.',
     disk_low: 'Only {free} GB free on the data drive; {need} GB needed.', ffmpeg_missing: 'FFmpeg was not found ({path}).'
   },
   warning: {
@@ -379,6 +380,7 @@ const sl = {
   },
   blocker: {
     missing_fields: 'Vnesite: {f}.', camera_checking: 'Preverjanje: {c} …', camera_offline: '{c} ({ip}) se ne odziva.',
+    camera_auth: '{c} ({ip}) je zavrnila uporabniško ime ali geslo. Prijave so začasno ustavljene, da se račun ne zaklene; popravite podatke v Nastavitvah in pritisnite Preizkusi.',
     disk_low: 'Na disku za podatke je le {free} GB prostora; potrebno je {need} GB.', ffmpeg_missing: 'FFmpeg ni najden ({path}).'
   },
   warning: {

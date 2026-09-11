@@ -157,7 +157,7 @@ class Controller(object):
             entry.update(reachable=True, rtt_ms=round((t_recv - t_send) * 1000, 1),
                          drift_s=round(dev_t - (t_send + t_recv) / 2, 1))
         except Exception as e:  # noqa
-            entry.update(reachable=False, error=str(e)[:160])
+            entry.update(reachable=False, error=str(e)[:160], auth="401" in str(e))
         return entry
 
     def reference_profile(self):
@@ -366,6 +366,10 @@ class Controller(object):
         if status != 200:
             return {"ok": False, "reason": "http", "detail": status}
         text = body.decode("utf-8", "replace")
+        live = self.cameras.get(merged["id"])
+        if live is not None and (live.ip, live.user, live.password) == (merged["ip"], merged["user"], merged["password"]):
+            live.clear_auth_pause()          # credentials proven good: resume at once
+            self._preview_cache.clear()
         return {"ok": True, "model": isapi.xml_get(text, "model"), "name": isapi.xml_get(text, "deviceName")}
 
     def update_connections(self, entries):
@@ -644,7 +648,8 @@ class Controller(object):
             if d is None:
                 blockers.append({"code": "camera_checking", "camera": cid})
             elif not d.get("reachable"):
-                blockers.append({"code": "camera_offline", "camera": cid, "ip": cam.ip})
+                blockers.append({"code": "camera_auth" if d.get("auth") else "camera_offline",
+                                 "camera": cid, "ip": cam.ip})
             elif d.get("drift_s") is not None and abs(d["drift_s"]) > self.cfg["clock_drift_warn_s"]:
                 warnings.append({"code": "clock_drift", "camera": cid, "value": d["drift_s"]})
             cc = self.camera_checks.get(cid) or {}

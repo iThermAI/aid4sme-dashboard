@@ -10,6 +10,7 @@ import json
 import os
 import re
 import threading
+import time
 import xml.etree.ElementTree as ET
 
 import requests
@@ -130,6 +131,14 @@ def response_status(text):
 # --------------------------------------------------------------------------- #
 # Camera client
 # --------------------------------------------------------------------------- #
+AUTH_PAUSE_S = 600
+
+
+class AuthPaused(IOError):
+    """Raised instead of contacting a camera that recently rejected our credentials.
+    Hikvision cameras lock the account after repeated failed logins, so we stop trying."""
+
+
 class Camera(object):
     def __init__(self, cam_cfg):
         self.id = cam_cfg["id"]
@@ -139,6 +148,10 @@ class Camera(object):
         self.thermal_channel = str(cam_cfg.get("thermal_channel", "2"))
         self._lock = threading.Lock()
         self._session = self.new_session()
+        self.auth_paused_until = 0.0
+
+    def clear_auth_pause(self):
+        self.auth_paused_until = 0.0
 
     def new_session(self):
         s = requests.Session()
@@ -150,9 +163,13 @@ class Camera(object):
 
     def request(self, method, path, data=None, timeout=4.0, content_type="application/xml"):
         """Returns (status, content_type, body_bytes). Network errors raise requests exceptions."""
+        if time.time() < self.auth_paused_until:
+            raise AuthPaused("HTTP 401 (logins paused for %d s)" % (self.auth_paused_until - time.time()))
         headers = {"Content-Type": content_type} if data is not None else None
         with self._lock:
             r = self._session.request(method, self.url(path), data=data, headers=headers, timeout=timeout)
+        if r.status_code == 401:
+            self.auth_paused_until = time.time() + AUTH_PAUSE_S
         return r.status_code, r.headers.get("Content-Type", ""), r.content
 
     def get(self, path, timeout=4.0):
@@ -198,8 +215,8 @@ class Camera(object):
                 entry.update(status=status, text=text)
                 if status == 200:
                     entry["flat"] = flatten_config(body)
-            except requests.RequestException as e:
-                entry.update(status=-1, error=type(e).__name__)
+            except (requests.RequestException, AuthPaused) as e:
+                entry.update(status=-1, error="HTTP 401" if isinstance(e, AuthPaused) else type(e).__name__)
             out[name] = entry
         return out
 
