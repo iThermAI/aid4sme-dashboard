@@ -1,0 +1,20 @@
+# Pinned for Python 3.8 on Windows 7 (64-bit).
+# pydantic is deliberately v1: pydantic v2 ships a Rust extension (pydantic-core),
+# and Rust toolchains from 1.78 on no longer produce binaries that load on Windows 7.
+fastapi==0.103.2
+starlette==0.27.0
+pydantic==1.10.13
+anyio==3.7.1
+sniffio==1.3.0
+exceptiongroup==1.1.3
+idna==3.4
+typing_extensions==4.8.0
+uvicorn==0.22.0
+h11==0.14.0
+click==8.1.7
+colorama==0.4.6
+requests==2.31.0
+urllib3==1.26.18
+certifi==2023.7.22
+charset-normalizer==3.3.2
+numpy==1.24.4

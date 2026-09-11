@@ -1,0 +1,20 @@
+Copyright (c) 2026 iThermAI and ELVEZ d.o.o. All rights reserved.
+
+This software and its source code are the proprietary property of iThermAI
+and ELVEZ d.o.o. ("the Owners").
+
+No licence, express or implied, is granted to any person to use, copy,
+modify, merge, publish, distribute, sublicense or sell copies of this
+software, in whole or in part, except with the prior written permission of
+the Owners.
+
+Access to this repository does not grant any rights to the software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+OWNERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE
+USE OF THE SOFTWARE.
+
+Third-party components (FastAPI, Vue, Three.js, IBM Plex Sans, Barlow and
+others) remain under their own licences.

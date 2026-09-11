@@ -1,0 +1,29 @@
+# Site configuration with camera passwords - never commit
+config.local.json
+config.local.json.*.bak
+.sim/
+
+# Recorded data and runtime state
+data/
+*.log
+
+# Build output and dependencies
+frontend/dist/
+frontend/node_modules/
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Tool output
+isapi_dumps/
+*.zip
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

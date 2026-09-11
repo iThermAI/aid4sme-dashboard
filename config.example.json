@@ -1,0 +1,42 @@
+{
+  "data_dir": "D:/aid4sme_data",
+  "port": 8000,
+  "ffmpeg": "C:/aid4sme/ffmpeg/bin/ffmpeg.exe",
+  "ffprobe": "C:/aid4sme/ffmpeg/bin/ffprobe.exe",
+  "cameras": [
+    {
+      "id": "cam1",
+      "ip": "192.168.1.30",
+      "user": "admin",
+      "password": "CHANGE_ME",
+      "thermal_channel": "2"
+    },
+    {
+      "id": "cam2",
+      "ip": "192.168.1.50",
+      "user": "admin",
+      "password": "CHANGE_ME",
+      "thermal_channel": "2"
+    }
+  ],
+  "nominal_fps": 25,
+  "segment_seconds": 60,
+  "max_record_seconds": 1800,
+  "radiometric": {
+    "rate_hz": 1.0
+  },
+  "keyence": {
+    "mode": "off",
+    "host": "192.168.1.40",
+    "port": 8500,
+    "delimiter": "\\r"
+  },
+  "required_metadata": [
+    "operator",
+    "mould_id",
+    "part_number",
+    "material"
+  ],
+  "min_free_disk_gb": 20,
+  "ffc_path": ""
+}
