@@ -121,7 +121,19 @@ def frame_times(ffprobe, path):
             if p not in ("", "N/A"):
                 times.append(float(p))
                 break
-    return times
+    # These cameras occasionally send a packet with no timestamp and FFmpeg repeats
+    # the previous one. Spread repeats over one frame interval so frame times stay
+    # strictly increasing, and report how many were repaired.
+    repaired = 0
+    step = 1.0 / 25.0
+    diffs = [b - a for a, b in zip(times, times[1:]) if b > a]
+    if diffs:
+        step = sorted(diffs)[len(diffs) // 2]
+    for i in range(1, len(times)):
+        if times[i] <= times[i - 1]:
+            times[i] = times[i - 1] + step
+            repaired += 1
+    return times, repaired
 
 
 def motion_signal(ffmpeg, path):
@@ -288,7 +300,7 @@ def build(session, args):
             print("  %-14s no segments" % name)
             continue
         anchor = progress_anchor(raw, name)
-        pts = frame_times(args.ffprobe, joined)
+        pts, repaired = frame_times(args.ffprobe, joined)
         host = [round(anchor["anchor_host_time"] + p, 6) for p in pts] if anchor else []
         with open(os.path.join(out, name + "_frames.csv"), "w", newline="") as f:
             w = csv.writer(f)
@@ -313,9 +325,11 @@ def build(session, args):
             "duration_s": round(pts[-1] - pts[0], 2) if len(pts) > 1 else 0,
             "anchor_host_time": anchor["anchor_host_time"] if anchor else None,
             "anchor_spread_p05_ms": anchor["spread_p05_ms"] if anchor else None,
+            "repaired_timestamps": repaired,
             "motion_frames": int(len(motion)) if motion is not None else 0}
-        print("  %-14s %5d frames, %2d segments, %.0fs  (%.0fs)"
-              % (name, len(pts), nseg, report["video"][name]["duration_s"], time.time() - t0))
+        print("  %-14s %5d frames, %2d segments, %.0fs%s  (%.0fs)"
+              % (name, len(pts), nseg, report["video"][name]["duration_s"],
+                 "" if not repaired else ", %d repeated timestamps repaired" % repaired, time.time() - t0))
 
     if not args.keep_joined:
         for name in report["video"]:
