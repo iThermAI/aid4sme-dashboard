@@ -22,6 +22,18 @@ class HiResClock(object):
     def now(self):
         return self.wall0 + (time.perf_counter() - self.perf0)
 
+    def wall_offset(self):
+        """How far this clock has parted from the PC's wall clock, in seconds.
+        perf_counter drifts on laptops, and NTP corrects the PC clock underneath us."""
+        return time.time() - self.now()
+
+    def resync(self):
+        """Re-anchor to the wall clock. Only ever called between runs: inside a run
+        the timebase must stay continuous. Returns the correction applied."""
+        before = self.now()
+        self.__init__()
+        return self.now() - before
+
 
 CLOCK = HiResClock()
 

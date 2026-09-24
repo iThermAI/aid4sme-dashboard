@@ -254,13 +254,50 @@ One folder per run, named `<date>_<time>_<mould>_run<NNN>`:
 
 ---
 
+## Building the dataset from a run
+
+`tools/build_dataset.py` turns raw sessions into aligned data. It runs on the capture PC
+(Python 3.8, numpy, the same FFmpeg), reads only `raw/`, and writes to `<session>/derived/`.
+
+```bat
+python tools\build_dataset.py D:\aid4sme_data\sessions\20260918_134047_1834_run023
+python tools\build_dataset.py D:\aid4sme_data\sessions --all
+```
+
+| Output | Contents |
+|---|---|
+| `<stream>_frames.csv` | Every frame with its position in the file and its host time |
+| `<stream>_motion.csv` | Per-frame motion signal used for alignment |
+| `radiometric_<cam>.npy` | float32 array `[matrices, 192, 256]` in °C |
+| `radiometric_<cam>.csv` | Capture time and timing uncertainty of every matrix |
+| `sync.json` | Measured offset of each stream, with correlation quality |
+| `telemetry.jsonl` | Events, operator notes and matrices in one time-ordered file |
+| `dataset.json` | What was produced |
+
+**How alignment works.** Both cameras watch the same machine, so mould open, ejection and
+close appear in all four streams. The tool computes each stream's frame-to-frame motion,
+cross-correlates them, and reports the offset that lines them up. Because the measurement
+comes from the pictures themselves, it includes the delay inside each camera, which the
+arrival-time estimate in `verification.json` cannot see. `sync.json` shows both, so they can
+be compared.
+
+`offset_ms` is how much later a stream's content is than the reference stream; subtract it
+from that stream's host times to put everything on one timeline. `correlation` says how much
+to trust it: above 0.6 is good, below 0.3 means the run had too little shared movement.
+
+Useful options: `--skip-motion` skips alignment and is much faster, `--keep-joined` keeps the
+joined video files (doubling disk use; the raw segments are always kept), and `--all`
+processes every session in a folder.
+
+---
+
 ## Development
 
 ```
 backend/        FastAPI server, recorder, ISAPI client, simulated camera
 frontend/       Vue 3 dashboard (Vite), built in Docker
 scripts/        sim-backend.sh (simulated backend), dev-ui.sh (live-reload dashboard)
-tools/          isapi_dump.py (read-only camera settings dump)
+tools/          isapi_dump.py (read-only camera settings dump), build_dataset.py (offline dataset builder)
 ```
 
 For live reload while working on the dashboard, run the backend (simulated, or a real capture PC) and then the Vite dev server:

@@ -119,8 +119,10 @@ def build(cfg, cam, sections, reference_flat=None, drift_s=None, selected_range=
             "time_shown": _bool(_first_under(ov, "DateTimeOverlay", "displayTime")),
         }
         if ov:
-            shown = st["overlay"]["date_time"] and st["overlay"]["time_shown"] is not False
-            checks.append({"id": "osd_time", "status": "ok" if shown else "warn", "stream": kind})
+            # Only the overlay switch is checked: on this firmware displayTime reads
+            # false even when the camera clearly draws the time on the video.
+            checks.append({"id": "osd_time", "status": "ok" if st["overlay"]["date_time"] else "warn",
+                           "stream": kind})
         inp = text("inputOptical" if kind == "optical" else "inputThermal")
         st["input_name"] = xml_get(inp, "name") if inp else None
         streams.append(st)

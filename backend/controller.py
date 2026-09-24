@@ -142,6 +142,12 @@ class Controller(object):
             active = self.state in ACTIVE
             for cam in list(self.cameras.values()):
                 self.devices[cam.id] = self._check_clock(cam)
+            if not active:
+                # Keep the session clock on the wall clock; never while recording.
+                off = self.clock.wall_offset()
+                if abs(off) > 0.5:
+                    corr = self.clock.resync()
+                    log.info("Master clock re-anchored to the wall clock: %+.3f s", corr)
             if not active and time.time() >= self._check_due:
                 try:
                     self.check_cameras()
@@ -153,9 +159,13 @@ class Controller(object):
     def _check_clock(self, cam):
         entry = {"id": cam.id, "ip": cam.ip, "checked_at": iso(self.clock.now())}
         try:
+            # Compared against the PC's wall clock, not the session clock, which may
+            # have parted from it since the server started.
+            w0 = time.time()
             dev_t, t_send, t_recv = cam.device_time(self.clock)
+            w1 = time.time()
             entry.update(reachable=True, rtt_ms=round((t_recv - t_send) * 1000, 1),
-                         drift_s=round(dev_t - (t_send + t_recv) / 2, 1))
+                         drift_s=round(dev_t - (w0 + w1) / 2, 1))
         except Exception as e:  # noqa
             entry.update(reachable=False, error=str(e)[:160], auth="401" in str(e))
         return entry
@@ -186,6 +196,7 @@ class Controller(object):
         info["read_at"] = iso(self.clock.now())
         self.camera_checks[cid] = {
             "reachable": info.get("reachable"),
+            "resolutions": {s["kind"]: (s.get("width"), s.get("height")) for s in info.get("streams", [])},
             "warnings": [c for c in info.get("checks", []) if c["status"] == "warn"],
             "reference_changes": len((info.get("reference") or {}).get("changes") or []),
             "read_at": info["read_at"],
@@ -432,8 +443,15 @@ class Controller(object):
             self._save_draft()
             return self.draft
 
-    def _region_entry(self, kind, r):
-        w, h = self.cfg["streams"][kind]["width"], self.cfg["streams"][kind]["height"]
+    def stream_frame(self, cam_id, kind):
+        """Resolution the camera really sends, falling back to the configured one."""
+        live = ((self.camera_checks.get(cam_id) or {}).get("resolutions") or {}).get(kind)
+        if live and live[0] and live[1]:
+            return live
+        return self.cfg["streams"][kind]["width"], self.cfg["streams"][kind]["height"]
+
+    def _region_entry(self, cam_id, kind, r):
+        w, h = self.stream_frame(cam_id, kind)
         x0 = min(max(float(r["x"]), 0.0), 1.0)
         y0 = min(max(float(r["y"]), 0.0), 1.0)
         x1 = min(max(x0 + float(r["w"]), 0.0), 1.0)
@@ -453,10 +471,10 @@ class Controller(object):
     def set_regions(self, stream, regions):
         with self.lock:
             self._require_idle()
-            streams = {n: k for n, _, k in config_mod.stream_names(self.cfg)}
+            streams = {n: (c["id"], k) for n, c, k in config_mod.stream_names(self.cfg)}
             if stream not in streams:
                 raise KeyError(stream)
-            entries = [self._region_entry(streams[stream], r) for r in (regions or [])[:12]
+            entries = [self._region_entry(streams[stream][0], streams[stream][1], r) for r in (regions or [])[:12]
                        if float(r.get("w", 0)) > 0.002 and float(r.get("h", 0)) > 0.002]
             if entries:
                 self.draft["regions"][stream] = entries
