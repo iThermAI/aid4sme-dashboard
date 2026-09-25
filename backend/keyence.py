@@ -387,6 +387,10 @@ class Iv3Service(object):
     def want_preview(self, seconds=10.0):
         self.watching_until = self.clock.now() + seconds
 
+    def wants_control(self):
+        """True while the service needs the camera's single control connection."""
+        return self._current_interval() is not None
+
     def _current_interval(self):
         """Trigger while recording, or while the live view is being watched. Never otherwise."""
         if not self.trigger_enabled:

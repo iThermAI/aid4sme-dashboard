@@ -147,24 +147,30 @@ class Controller(object):
     # ------------------------------------------------------------------ #
     def _monitor_loop(self):
         while not self._monitor_stop.is_set():
-            active = self.state in ACTIVE
-            for cam in list(self.cameras.values()):
-                self.devices[cam.id] = self._check_clock(cam)
-            self.keyence_state = self._check_keyence()
-            self._ensure_keyence_service()
-            if not active:
-                # Keep the session clock on the wall clock; never while recording.
-                off = self.clock.wall_offset()
-                if abs(off) > 0.5:
-                    corr = self.clock.resync()
-                    log.info("Master clock re-anchored to the wall clock: %+.3f s", corr)
-            if not active and time.time() >= self._check_due:
-                try:
-                    self.check_cameras()
-                except Exception:  # noqa
-                    log.exception("settings check failed")
-                self._check_due = time.time() + 120
-            self._monitor_stop.wait(30 if active else self.cfg["device_poll_s"])
+            try:
+                self._monitor_once()
+            except Exception:  # noqa - one failure must never stop the monitoring thread
+                log.exception("device monitor step failed")
+            self._monitor_stop.wait(30 if self.state in ACTIVE else self.cfg["device_poll_s"])
+
+    def _monitor_once(self):
+        active = self.state in ACTIVE
+        for cam in list(self.cameras.values()):
+            self.devices[cam.id] = self._check_clock(cam)
+        self.keyence_state = self._check_keyence()
+        self._ensure_keyence_service()
+        if not active:
+            # Keep the session clock on the wall clock; never while recording.
+            off = self.clock.wall_offset()
+            if abs(off) > 0.5:
+                corr = self.clock.resync()
+                log.info("Master clock re-anchored to the wall clock: %+.3f s", corr)
+        if not active and time.time() >= self._check_due:
+            try:
+                self.check_cameras()
+            except Exception:  # noqa
+                log.exception("settings check failed")
+            self._check_due = time.time() + 120
 
     def _check_clock(self, cam):
         entry = {"id": cam.id, "ip": cam.ip, "checked_at": iso(self.clock.now())}
