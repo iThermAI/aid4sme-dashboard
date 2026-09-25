@@ -274,9 +274,15 @@ machine's screen, and the pictures are read later. Set `keyence.mode` to `"iv3"`
 }
 ```
 
-While a run is recording, the dashboard runs an FTP server that receives the images the
-camera pushes, and, when `"trigger": true`, also triggers the camera over TCP every
-`trigger_interval_s` seconds. Nothing is recorded between runs.
+The FTP server runs for as long as the dashboard runs, so the camera is never refused a
+connection. Between runs the pictures it pushes go to a scratch folder that keeps only the
+newest few, for the live view; during a run they are moved into the session as they arrive
+and listed in `index.csv`.
+
+When `"trigger": true`, the dashboard also triggers the camera over TCP every
+`trigger_interval_s` seconds, and the operator can change that interval in **Settings**.
+Triggering happens while a run is recording or while somebody is watching the live view,
+never in between, so the camera is not photographed all day for nothing.
 
 Set `"trigger": false` (or **Settings → Keyence → Trigger → The camera triggers itself**)
 when the IV3 program uses an internal trigger. If the camera answers a trigger command with

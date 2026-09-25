@@ -210,7 +210,8 @@ class Recording(object):
                 p = RadiometricPoller(cam.id, fetch, out, rcfg["rate_hz"], range_max, self.clock, self.emit)
                 p.start()
                 self.pollers.append(p)
-        self.keyence = make_receiver(cfg["keyence"], os.path.join(self.raw, "keyence"), self.clock, self.emit)
+        self.keyence = make_receiver(cfg["keyence"], os.path.join(self.raw, "keyence"), self.clock,
+                                     self.emit, getattr(self.ctl, "keyence_service", None))
         self.keyence.start()
 
         self.state = "recording"

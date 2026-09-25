@@ -84,6 +84,16 @@ onBeforeUnmount(() => {
           <td>{{ info.trigger_enabled === false || info.trigger === false ? t('cameras.keyenceTriggerOff') : t('cameras.keyenceTriggerOn') }}</td></tr>
         <tr v-if="info.trigger !== false"><th>{{ t('cameras.keyenceInterval') }}</th><td class="num">{{ info.trigger_interval_s }} s</td></tr>
         <tr><th>{{ t('cameras.keyenceFtpPort') }}</th><td class="num">{{ info.ftp_port }}</td></tr>
+        <tr>
+          <th>{{ t('cameras.keyenceService') }}</th>
+          <td :class="{ err: !info.service_running }">
+            {{ info.service_running ? t('cameras.keyenceServiceOn') : t('cameras.keyenceServiceOff') }}
+            <span v-if="info.service_error" class="err"> {{ info.service_error }}</span>
+          </td>
+        </tr>
+        <tr v-if="info.images_since_start !== undefined">
+          <th>{{ t('cameras.keyenceSince') }}</th><td class="num">{{ info.images_since_start }}</td>
+        </tr>
         <tr v-if="info.last_image_age_s !== undefined">
           <th>{{ t('cameras.keyenceLast') }}</th><td class="num">{{ t('cameras.keyenceAge', { v: info.last_image_age_s }) }}</td>
         </tr>

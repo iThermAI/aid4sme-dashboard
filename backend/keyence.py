@@ -23,6 +23,7 @@ import csv
 import json
 import logging
 import os
+import shutil
 import socket
 import threading
 import time
@@ -151,23 +152,40 @@ def parse_result_text(path):
     return out
 
 
-class Iv3Receiver(object):
-    """Triggers the IV3 over TCP and receives the images it pushes over FTP."""
+class Iv3Service(object):
+    """Long-lived Keyence IV3 connection, owned by the server rather than by a run.
+
+    The FTP server stays up for as long as the dashboard runs, so the camera never
+    gets a refused connection, and it can push whenever it likes. Between runs the
+    pictures go to a scratch folder that keeps only the newest few; during a run they
+    are moved into the session as they arrive and listed in index.csv.
+
+    Triggering, when the camera's program allows it, happens while a run is recording
+    or while somebody is watching the live view, and never in between.
+    """
     name = "keyence"
 
-    def __init__(self, kcfg, out_dir, clock, emit):
+    def __init__(self, kcfg, scratch_dir, clock, emit):
         self.cfg = kcfg
-        self.out_dir = out_dir
+        self.scratch_dir = scratch_dir
         self.clock = clock
-        self.emit = emit
+        self.emit_server = emit
+        self.emit_session = None
         self.stop_event = threading.Event()
         self.threads = []
         self.server = None
         self.lock = threading.Lock()
-        self.rows = []
-        self.images = 0
+        self.session_dir = None
+        self.session_stopping = False
+        self.index = None
+        self.writer = None
+        self.scratch_keep = int(kcfg.get("scratch_keep", 40))
+        self.scratch_since_prune = 0
+        self.watching_until = 0.0
+        self.images = 0                 # this session
         self.triggers = 0
         self.failed = 0
+        self.total_images = 0           # since the server started
         self.connected = False
         self.trigger_enabled = bool(kcfg.get("trigger", True))
         self.trigger_refused = 0
@@ -178,82 +196,232 @@ class Iv3Receiver(object):
         self.last_trigger_no = None
         self.health = "starting"
         self.t_start = None
-        self.index = None
+        self.pending = None
 
-    # -- lifecycle ---------------------------------------------------------- #
+    # -- lifecycle ------------------------------------------------------------ #
     def start(self):
-        os.makedirs(self.out_dir, exist_ok=True)
+        if os.path.isdir(self.scratch_dir):
+            shutil.rmtree(self.scratch_dir, ignore_errors=True)
+        os.makedirs(self.scratch_dir, exist_ok=True)
         self.t_start = self.clock.now()
-        self.index = open(os.path.join(self.out_dir, "index.csv"), "w", newline="")
-        self.writer = csv.DictWriter(self.index, fieldnames=IV3_FIELDS, extrasaction="ignore")
-        self.writer.writeheader()
         self._start_ftp()
-        if self.trigger_enabled:
-            t = threading.Thread(target=self._trigger_loop, name="keyence-trigger")
-            t.daemon = True
-            t.start()
-            self.threads.append(t)
-        else:
-            self.emit("keyence_receive_only", host=self.cfg["host"])
+        t = threading.Thread(target=self._trigger_loop, name="keyence-trigger")
+        t.daemon = True
+        t.start()
+        self.threads.append(t)
+        if not self.trigger_enabled:
+            self.emit_server("keyence_receive_only", host=self.cfg["host"])
+
+    def shutdown(self):
+        self.stop_event.set()
+        if self.server:
+            try:
+                self.server.close_all()
+            except Exception:                      # noqa - shutting down anyway
+                pass
+            self.server = None
+        for t in self.threads:
+            t.join(2)
+        self.threads = []
+        self._close_index()
 
     def _start_ftp(self):
         from pyftpdlib.authorizers import DummyAuthorizer
         from pyftpdlib.handlers import FTPHandler
         from pyftpdlib.servers import FTPServer
 
-        receiver = self
+        service = self
 
         class Handler(FTPHandler):
             def on_file_received(self, path):
-                receiver._on_file(path)
+                service._on_file(path)
 
             def on_incomplete_file_received(self, path):
-                receiver._on_file(path, incomplete=True)
+                service._on_file(path, incomplete=True)
 
         auth = DummyAuthorizer()
         auth.add_user(self.cfg.get("ftp_user", "ftpuser"), self.cfg.get("ftp_pass", "ftppass"),
-                      self.out_dir, perm="elradfmw")
+                      self.scratch_dir, perm="elradfmw")
         Handler.authorizer = auth
         Handler.banner = "Aid4SME Dashboard"
-        # Pin the data-connection ports, so one firewall rule covers them.
         ports = self.cfg.get("ftp_passive_ports") or [2130, 2140]
         Handler.passive_ports = range(int(ports[0]), int(ports[1]) + 1)
         logging.getLogger("pyftpdlib").setLevel(logging.WARNING)
         port = int(self.cfg.get("ftp_port", 2121))
         last = None
-        for attempt in range(10):
+        for _ in range(10):
             try:
                 self.server = FTPServer(("0.0.0.0", port), Handler)
                 break
-            except OSError as e:               # the port may still be closing
+            except OSError as e:                   # the port may still be closing
                 last = e
                 time.sleep(0.3)
         else:
             raise IOError("FTP port %d is in use (%s). Close anything else listening on it."
                           % (port, last))
-        t = threading.Thread(target=self.server.serve_forever, kwargs={"timeout": 0.5, "blocking": True},
-                             name="keyence-ftp")
+        t = threading.Thread(target=self.server.serve_forever,
+                             kwargs={"timeout": 0.5, "blocking": True}, name="keyence-ftp")
         t.daemon = True
         t.start()
         self.threads.append(t)
-        self.emit("keyence_ftp_started", port=int(self.cfg.get("ftp_port", 2121)), folder=self.out_dir)
+        self.emit_server("keyence_ftp_started", port=port, folder=self.scratch_dir)
+
+    # -- session ---------------------------------------------------------------- #
+    def begin_session(self, out_dir, emit):
+        with self.lock:
+            os.makedirs(out_dir, exist_ok=True)
+            self.index = open(os.path.join(out_dir, "index.csv"), "w", newline="")
+            self.writer = csv.DictWriter(self.index, fieldnames=IV3_FIELDS, extrasaction="ignore")
+            self.writer.writeheader()
+            self.session_dir = out_dir
+            self.session_stopping = False
+            self.emit_session = emit
+            self.images = self.triggers = self.failed = 0
+            self.t_start = self.clock.now()
+            self.health = "starting"
+
+    def end_session(self):
+        self.session_stopping = True
+
+    def finish_session(self, timeout):
+        deadline = self.clock.now() + max(timeout, float(self.cfg.get("ftp_wait_s", 2.0)))
+        while self.clock.now() < deadline and self.last_image_t and self.clock.now() - self.last_image_t < 1.0:
+            time.sleep(0.2)                        # let a transfer in flight finish
+        with self.lock:
+            self.session_dir = None
+            self.emit_session = None
+            self._close_index()
+        self.health = "stopped"
+
+    def _close_index(self):
+        if self.index:
+            try:
+                self.index.close()
+            except OSError:
+                pass
+            self.index = None
+            self.writer = None
+
+    def _emit(self, *a, **k):
+        (self.emit_session or self.emit_server)(*a, **k)
+
+    # -- incoming files ------------------------------------------------------------ #
+    def _on_file(self, path, incomplete=False):
+        t = self.clock.now()
+        kind = "image" if path.lower().endswith((".jpg", ".jpeg", ".bmp", ".png")) else "result"
+        info = parse_result_text(path) if kind == "result" else {}
+        with self.lock:
+            session = self.session_dir
+            dest_root = session or self.scratch_dir
+            if session and session != self.scratch_dir:
+                rel = os.path.relpath(path, self.scratch_dir)
+                dest = os.path.join(self.session_dir, rel)
+                try:
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    os.replace(path, dest)
+                    path = dest
+                except OSError as e:               # keep the file rather than lose it
+                    incomplete = incomplete or True
+                    self.last_error = str(e)[:100]
+        rel = os.path.relpath(path, dest_root).replace("\\", "/")
+        row = {"kind": kind, "file": rel, "t_received": round(t, 6),
+               "error": "incomplete transfer" if incomplete else ""}
+        try:
+            row["bytes"] = os.path.getsize(path)
+        except OSError:
+            row["bytes"] = 0
+        if kind == "result":
+            row["trigger_no"] = info.get("Trigger No", info.get("Trigger No.", ""))
+            row["device_time"] = " ".join(info["Time and Date"]) if isinstance(info.get("Time and Date"), list) \
+                else info.get("Time and Date", "")
+            row["total_status"] = info.get("Total Status", "")
+            if row["trigger_no"]:
+                self.last_trigger_no = row["trigger_no"]
+            self.last_result = info
+        else:
+            self.last_image_t = t
+            self.last_image_path = path
+            self.total_images += 1
+        with self.lock:
+            pending = self.pending if self.trigger_enabled else None
+            if pending:
+                row.update({k: pending[k] for k in ("t_trigger", "t_response", "trigger_latency_ms")})
+                row["transfer_s"] = round(t - pending["t_response"], 3)
+            if self.session_dir is not None and self.writer:
+                if kind == "image":
+                    self.images += 1
+                row["seq"] = self.triggers if self.trigger_enabled else self.total_images
+                self.writer.writerow(row)
+                self.index.flush()
+            else:
+                self._prune_scratch(path)
+
+    def _prune_scratch(self, path):
+        """Between runs the pictures are only for the live view: keep the newest few.
+
+        Sweeping the folder rather than a remembered list, so files left behind by a
+        crash or by a stop mid-transfer are cleaned up too.
+        """
+        self.scratch_since_prune += 1
+        if self.scratch_since_prune < 5:
+            return
+        self.scratch_since_prune = 0
+        files = []
+        for root, _, names in os.walk(self.scratch_dir):
+            for n in names:
+                f = os.path.join(root, n)
+                try:
+                    files.append((os.path.getmtime(f), f))
+                except OSError:
+                    pass
+        files.sort(reverse=True)
+        for _, f in files[self.scratch_keep:]:
+            if f == self.last_image_path:
+                continue
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
+    # -- triggering ------------------------------------------------------------------ #
+    def want_preview(self, seconds=10.0):
+        self.watching_until = self.clock.now() + seconds
+
+    def _current_interval(self):
+        """Trigger while recording, or while the live view is being watched. Never otherwise."""
+        if not self.trigger_enabled:
+            return None
+        if self.session_dir is not None and not self.session_stopping:
+            return float(self.cfg.get("trigger_interval_s", 5.0))
+        if self.clock.now() < self.watching_until:
+            return float(self.cfg.get("preview_interval_s", 3.0))
+        return None
 
     def _trigger_loop(self):
-        interval = float(self.cfg.get("trigger_interval_s", 5.0))
         host, port = self.cfg["host"], int(self.cfg.get("port", 8500))
         sock = None
-        next_at = self.clock.now()
+        next_at = 0.0
         while not self.stop_event.is_set():
-            wait = next_at - self.clock.now()
-            if wait > 0 and self.stop_event.wait(wait):
-                break
+            interval = self._current_interval()
+            if interval is None:
+                if sock is not None:
+                    sock.close()                   # release the camera while nobody needs it
+                    sock = None
+                    self.connected = False
+                self.stop_event.wait(0.3)
+                next_at = 0.0
+                continue
+            now = self.clock.now()
+            if next_at and now < next_at:
+                self.stop_event.wait(min(next_at - now, 0.3))
+                continue
             next_at = self.clock.now() + interval
             try:
                 if sock is None:
                     sock = socket.create_connection((host, port), timeout=3)
                     sock.settimeout(3)
                     self.connected = True
-                    self.emit("keyence_connected", host=host, port=port)
+                    self._emit("keyence_connected", host=host, port=port)
                 t_send = self.clock.now()
                 sock.sendall(b"T1\r")
                 resp = sock.recv(256).decode("ascii", "replace").strip()
@@ -264,24 +432,21 @@ class Iv3Receiver(object):
                                     "t_response": round(t_resp, 6),
                                     "trigger_latency_ms": round((t_resp - t_send) * 1000, 1)}
                 if resp.startswith("ER"):
-                    self._row(dict(self.pending, kind="trigger", error=resp))
                     self.failed += 1
                     self.last_error = resp
                     self.trigger_refused += 1
-                    # The sensor triggers itself (or is in setup mode): stop asking and
-                    # simply record whatever it pushes, instead of failing all run long.
+                    # The camera refuses to be triggered (self-triggering program, or setup
+                    # mode): stop asking and record whatever it pushes by itself.
                     if self.trigger_refused >= 3:
                         self.trigger_enabled = False
-                        self.emit("keyence_receive_only", reason=resp, level="warning")
-                        break
+                        self._emit("keyence_receive_only", reason=resp, level="warning")
                 else:
                     self.trigger_refused = 0
             except OSError as e:
                 self.connected = False
                 self.failed += 1
-                self._row({"seq": self.triggers, "kind": "trigger", "error": str(e)[:120],
-                           "t_trigger": round(self.clock.now(), 6)})
-                self.emit("keyence_error", error=str(e)[:120], level="warning")
+                self.last_error = str(e)[:120]
+                self._emit("keyence_error", error=str(e)[:120], level="warning")
                 if sock:
                     sock.close()
                 sock = None
@@ -292,76 +457,23 @@ class Iv3Receiver(object):
             except OSError:
                 pass
 
-    # -- files -------------------------------------------------------------- #
-    def _on_file(self, path, incomplete=False):
-        t = self.clock.now()
-        rel = os.path.relpath(path, self.out_dir).replace("\\", "/")
-        kind = "image" if path.lower().endswith((".jpg", ".jpeg", ".bmp", ".png")) else "result"
-        row = {"seq": self.triggers, "kind": kind, "file": rel, "t_received": round(t, 6),
-               "error": "incomplete transfer" if incomplete else ""}
-        try:
-            row["bytes"] = os.path.getsize(path)
-        except OSError:
-            row["bytes"] = 0
-        pending = getattr(self, "pending", None)
-        if pending:
-            row.update({k: pending[k] for k in ("t_trigger", "t_response", "trigger_latency_ms")})
-            row["transfer_s"] = round(t - pending["t_response"], 3)
-        if kind == "result":
-            info = parse_result_text(path)
-            row["trigger_no"] = info.get("Trigger No", info.get("Trigger No.", ""))
-            row["device_time"] = " ".join(info["Time and Date"]) if isinstance(info.get("Time and Date"), list) \
-                else info.get("Time and Date", "")
-            row["total_status"] = info.get("Total Status", "")
-            self.last_trigger_no = row["trigger_no"] or self.last_trigger_no
-            self.last_result = info
-        else:
-            self.images += 1
-            self.last_image_t = t
-            self.last_image_path = path
-        self._row(row)
-
-    def _row(self, row):
-        with self.lock:
-            self.rows.append(row)
-            self.writer.writerow(row)
-            self.index.flush()
-
+    # -- state ------------------------------------------------------------------------- #
     def latest_image(self):
-        """Newest received picture, for the live view."""
         path = self.last_image_path
         if not path or not os.path.isfile(path):
             return None
-        with open(path, "rb") as f:
-            return f.read(), ("image/bmp" if path.lower().endswith(".bmp") else "image/jpeg"), self.last_image_t
-
-    # -- control ------------------------------------------------------------- #
-    def stop(self):
-        self.stop_event.set()
-
-    def finish(self, timeout):
-        deadline = self.clock.now() + max(timeout, float(self.cfg.get("ftp_wait_s", 2.0)))
-        while self.clock.now() < deadline and self.clock.now() - (self.last_image_t or 0) < 1.0:
-            time.sleep(0.2)                       # let a transfer in flight finish
-        if self.server:
-            try:
-                self.server.close_all()
-            except Exception:                     # noqa - shutting down anyway
-                pass
-        for t in self.threads:
-            t.join(2)
-        if self.index:
-            self.index.close()
-            self.index = None
+        try:
+            with open(path, "rb") as f:
+                return f.read(), ("image/bmp" if path.lower().endswith(".bmp") else "image/jpeg"), self.last_image_t
+        except OSError:                            # moved into a session between the two calls
+            return None
 
     def check(self):
         now = self.clock.now()
-        stale = float(self.cfg.get("stale_after_s", 0)) or max(
-            3 * float(self.cfg.get("trigger_interval_s", 5.0)), 10.0)
-        if self.stop_event.is_set():
+        stale = float(self.cfg.get("stale_after_s", 0)) or (
+            60.0 if not self.trigger_enabled else max(3 * float(self.cfg.get("trigger_interval_s", 5.0)), 10.0))
+        if self.session_dir is None:
             health = "stopped"
-        elif not self.trigger_enabled and self.last_image_t is None and now - self.t_start < 60:
-            health = "starting"          # waiting for the camera to push on its own
         elif self.last_image_t is None:
             health = "starting" if now - self.t_start < stale else "stalled"
         else:
@@ -375,13 +487,41 @@ class Iv3Receiver(object):
                 "records": self.images, "triggers": self.triggers, "failed": self.failed,
                 "connected": self.connected, "trigger_no": self.last_trigger_no,
                 "trigger_enabled": self.trigger_enabled, "last_error": self.last_error,
+                "total_images": self.total_images,
                 "since_record_s": round(now - self.last_image_t, 1) if self.last_image_t else None}
 
 
-def make_receiver(kcfg, out_dir, clock, emit):
+class SessionRecorder(object):
+    """What a run sees: the same interface as the other streams, backed by the service."""
+    name = "keyence"
+
+    def __init__(self, service, out_dir, emit):
+        self.service = service
+        self.out_dir = out_dir
+        self.emit = emit
+
+    def start(self):
+        self.service.begin_session(self.out_dir, self.emit)
+
+    def stop(self):
+        self.service.end_session()
+
+    def finish(self, timeout):
+        self.service.finish_session(timeout)
+
+    def check(self):
+        return self.service.check()
+
+    def status(self):
+        return self.service.status()
+
+
+def make_receiver(kcfg, out_dir, clock, emit, service=None):
     mode = kcfg.get("mode")
     if mode == "iv3":
-        return Iv3Receiver(kcfg, out_dir, clock, emit)
+        if service is None:
+            raise IOError("the Keyence service is not running")
+        return SessionRecorder(service, out_dir, emit)
     if mode == "tcp":
         return TcpReceiver(kcfg, out_dir, clock, emit)
     return NullReceiver()

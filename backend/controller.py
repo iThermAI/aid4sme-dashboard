@@ -23,7 +23,7 @@ from . import isapi
 from .clock import CLOCK, iso
 from .recorder import Recording, write_json
 from .simcam import SimCamera
-from .keyence import make_receiver
+from .keyence import Iv3Service
 from .stores import JsonStore
 from .video import ffmpeg_version
 
@@ -68,8 +68,8 @@ class Controller(object):
         self.devices = {}
         self.camera_checks = {}
         self.keyence_state = None
-        self.keyence_preview = None          # live view receiver, only between runs
-        self.keyence_preview_wanted = 0.0
+        self.keyence_service = None          # the FTP server stays up as long as the server does
+        self.keyence_error = ""
         self.recording = None
         self.prefs = self._load_prefs()
         self.draft = self._load_draft()
@@ -80,6 +80,7 @@ class Controller(object):
         self._index = {}
         self._index_at = 0.0
         self._recover_interrupted()
+        self._ensure_keyence_service()
         self._monitor_stop = threading.Event()
         self._check_due = 0.0
         self._monitor = threading.Thread(target=self._monitor_loop, name="device-monitor")
@@ -150,9 +151,7 @@ class Controller(object):
             for cam in list(self.cameras.values()):
                 self.devices[cam.id] = self._check_clock(cam)
             self.keyence_state = self._check_keyence()
-            if self.keyence_preview and (self.state in ACTIVE or
-                                         time.time() - self.keyence_preview_wanted > 10):
-                self._stop_keyence_preview()
+            self._ensure_keyence_service()
             if not active:
                 # Keep the session clock on the wall clock; never while recording.
                 off = self.clock.wall_offset()
@@ -198,40 +197,47 @@ class Controller(object):
             state.update(reachable=False, error=type(e).__name__)
         return state
 
-    def _keyence_preview_dir(self):
-        return os.path.join(self.draft_dir, "keyence_preview")
+    def _keyence_scratch_dir(self):
+        return os.path.join(self.cfg["data_dir"], "keyence_incoming")
 
-    def _start_keyence_preview(self):
-        kc = dict(self.cfg["keyence"])
-        kc["trigger_interval_s"] = kc.get("preview_interval_s", 3.0)
-        folder = self._keyence_preview_dir()
-        if os.path.isdir(folder):
-            shutil.rmtree(folder, ignore_errors=True)
-        rx = make_receiver(kc, folder, self.clock, lambda *a, **k: None)
-        rx.start()
-        self.keyence_preview = rx
-        log.info("Keyence live view started")
+    def _ensure_keyence_service(self):
+        """Keep the IV3 FTP server up whenever the camera is configured, so the camera never
+        meets a closed port. Pictures received between runs are kept only for the live view."""
+        if self.cfg["keyence"]["mode"] != "iv3":
+            if self.keyence_service:
+                self._stop_keyence_service()
+            return
+        if self.keyence_service is not None:
+            return
+        try:
+            svc = Iv3Service(self.cfg["keyence"], self._keyence_scratch_dir(), self.clock,
+                             self._service_event)
+            svc.start()
+            self.keyence_service = svc
+            self.keyence_error = ""
+            log.info("Keyence service started, FTP port %s", self.cfg["keyence"]["ftp_port"])
+        except Exception as e:  # noqa - report and retry on the next pass
+            self.keyence_error = str(e)[:160]
+            log.warning("Keyence service could not start: %s", e)
 
-    def _stop_keyence_preview(self):
-        rx, self.keyence_preview = self.keyence_preview, None
-        if rx:
-            rx.stop()
-            try:
-                rx.finish(2)
-            except Exception:                      # noqa - best effort
-                pass
-            log.info("Keyence live view stopped")
+    def _service_event(self, kind, **data):
+        log.info("keyence %s %s", kind, data or "")
+
+    def _stop_keyence_service(self):
+        svc, self.keyence_service = self.keyence_service, None
+        if svc:
+            svc.shutdown()
+            log.info("Keyence service stopped")
 
     def keyence_preview_image(self):
-        """Latest IV3 picture, triggering the camera in the background while watched."""
+        """Latest IV3 picture; asks for triggering while somebody is watching."""
         if self.cfg["keyence"]["mode"] != "iv3":
             raise KeyError("keyence")
-        if self.state in ACTIVE:
-            raise StateError("previews_paused")
-        self.keyence_preview_wanted = time.time()
-        if self.keyence_preview is None:
-            self._start_keyence_preview()
-        latest = self.keyence_preview.latest_image()
+        self._ensure_keyence_service()
+        if self.keyence_service is None:
+            raise IOError(self.keyence_error or "the Keyence service is not running")
+        self.keyence_service.want_preview()
+        latest = self.keyence_service.latest_image()
         if latest is None:
             raise IOError("waiting for the first image from the IV3")
         body, ctype, _ = latest
@@ -239,16 +245,18 @@ class Controller(object):
 
     def keyence_status(self):
         st = dict(self.keyence_state or {"mode": self.cfg["keyence"]["mode"]})
-        rx = self.keyence_preview if self.keyence_preview else (
-            self.recording.keyence if self.recording and self.state in ACTIVE else None)
-        if rx is not None:
-            st["trigger_enabled"] = getattr(rx, "trigger_enabled", None)
-            st["last_error"] = getattr(rx, "last_error", "")
-        if rx is not None and getattr(rx, "last_image_t", None):
-            st["last_image_age_s"] = round(self.clock.now() - rx.last_image_t, 1)
-            st["trigger_no"] = rx.last_trigger_no
-            st["result"] = {k: v for k, v in (rx.last_result or {}).items() if isinstance(v, str)}
-            st["images"] = rx.images
+        svc = self.keyence_service
+        st["service_running"] = svc is not None
+        st["service_error"] = self.keyence_error
+        if svc is not None:
+            st["trigger_enabled"] = svc.trigger_enabled
+            st["images_since_start"] = svc.total_images
+            st["last_error"] = svc.last_error
+            if svc.last_image_t:
+                st["last_image_age_s"] = round(self.clock.now() - svc.last_image_t, 1)
+                st["trigger_no"] = svc.last_trigger_no
+                st["result"] = {k: v for k, v in (svc.last_result or {}).items() if isinstance(v, str)}
+                st["images"] = svc.images
         st["ftp_folder"] = self.cfg["data_dir"]
         st["image_size"] = [self.cfg["keyence"]["image_width"], self.cfg["keyence"]["image_height"]]
         return st
@@ -259,17 +267,18 @@ class Controller(object):
             raise StateError("busy_recording")
         if self.cfg["keyence"]["mode"] != "iv3":
             raise ValueError("keyence_not_configured")
-        self.keyence_preview_wanted = time.time()
-        if self.keyence_preview is None:
-            self._start_keyence_preview()
-        rx = self.keyence_preview
-        before = rx.images
-        deadline = time.time() + max(8, float(self.cfg["keyence"]["preview_interval_s"]) * 2)
-        while time.time() < deadline and rx.images == before:
+        self._ensure_keyence_service()
+        svc = self.keyence_service
+        if svc is None:
+            raise StateError("keyence_not_running:%s" % self.keyence_error)
+        svc.want_preview()
+        before = svc.total_images
+        deadline = time.time() + 8
+        while time.time() < deadline and svc.total_images == before:
             time.sleep(0.2)
-        return {"ok": rx.images > before, "images": rx.images, "trigger_no": rx.last_trigger_no,
-                "connected": rx.connected, "failed": rx.failed,
-                "trigger_enabled": rx.trigger_enabled, "error": rx.last_error}
+        return {"ok": svc.total_images > before, "images": svc.total_images,
+                "trigger_no": svc.last_trigger_no, "connected": svc.connected,
+                "failed": svc.failed, "trigger_enabled": svc.trigger_enabled}
 
     def update_keyence(self, data):
         with self.lock:
@@ -293,7 +302,8 @@ class Controller(object):
                 config_mod.save_section(self.cfg, "keyence", kc)
             else:
                 self.cfg["keyence"] = kc
-            self._stop_keyence_preview()
+            self._stop_keyence_service()          # new address, ports or interval
+            self._ensure_keyence_service()
             self.keyence_state = self._check_keyence()
             return self.keyence_status()
 
@@ -836,7 +846,6 @@ class Controller(object):
             if blockers:
                 raise StateError("blocked")
             self._preview_cache.clear()
-            self._stop_keyence_preview()      # it holds the FTP port the recorder needs
             run = self.next_run_number(self.draft["metadata"].get("mould_id"))
             rec = Recording(self, json.loads(json.dumps(self.draft)), run)
             self.recording = rec
@@ -913,7 +922,7 @@ class Controller(object):
 
     def shutdown(self):
         self._monitor_stop.set()
-        self._stop_keyence_preview()
+        self._stop_keyence_service()
         rec = self.recording
         if rec and rec.state == "recording":
             rec.stop("server_shutdown")
