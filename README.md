@@ -265,6 +265,7 @@ machine's screen, and the pictures are read later. Set `keyence.mode` to `"iv3"`
   "mode": "iv3",
   "host": "192.168.1.40",
   "port": 8500,
+  "trigger": true,
   "trigger_interval_s": 5.0,
   "ftp_port": 2121,
   "ftp_user": "ftpuser",
@@ -273,9 +274,22 @@ machine's screen, and the pictures are read later. Set `keyence.mode` to `"iv3"`
 }
 ```
 
-While a run is recording, the dashboard triggers the camera over TCP every
-`trigger_interval_s` seconds and runs an FTP server that receives the pushed image and
-its result file. Nothing is recorded between runs.
+While a run is recording, the dashboard runs an FTP server that receives the images the
+camera pushes, and, when `"trigger": true`, also triggers the camera over TCP every
+`trigger_interval_s` seconds. Nothing is recorded between runs.
+
+Set `"trigger": false` (or **Settings → Keyence → Trigger → The camera triggers itself**)
+when the IV3 program uses an internal trigger. If the camera answers a trigger command with
+`ER,T1,03` it is refusing it — usually because it is in setup mode, IV3 Navigator is
+connected, or the program does not use an external trigger. After three refusals the
+dashboard stops asking and simply records what the camera sends, and says so on the
+Cameras page.
+
+Before switching it on, `python tools/keyence_mwe.py --ip 192.168.1.40` tests the whole
+Keyence path on its own: it triggers the camera, runs a temporary FTP server, and says which
+of the two halves is failing. Close the IV3 Navigator software first; while it holds the
+sensor, trigger commands are refused. Note that Navigator connects on port 63000, which is
+its own channel; triggering uses port 8500.
 
 **On the camera**, in the IV3 software, set image output to FTP, pointing at the capture
 PC's address and `ftp_port`, with the same user and password. **On the capture PC**, allow
@@ -349,7 +363,8 @@ processes every session in a folder.
 backend/        FastAPI server, recorder, ISAPI client, simulated camera
 frontend/       Vue 3 dashboard (Vite), built in Docker
 scripts/        sim-backend.sh (simulated backend), dev-ui.sh (live-reload dashboard)
-tools/          isapi_dump.py (read-only camera settings dump), build_dataset.py (offline dataset builder)
+tools/          isapi_dump.py (camera settings dump), build_dataset.py (offline dataset builder),
+                keyence_mwe.py (standalone IV3 trigger + FTP test)
 ```
 
 For live reload while working on the dashboard, run the backend (simulated, or a real capture PC) and then the Vite dev server:

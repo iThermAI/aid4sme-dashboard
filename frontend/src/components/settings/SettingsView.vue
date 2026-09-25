@@ -51,7 +51,7 @@ async function saveConnections () {
   } catch (e) { error.value = errorText(e) } finally { busy.value = false }
 }
 
-const keyence = reactive({ mode: 'off', host: '', port: 8500, trigger_interval_s: 5, ftp_port: 2121 })
+const keyence = reactive({ mode: 'off', host: '', port: 8500, trigger: true, trigger_interval_s: 5, ftp_port: 2121 })
 const kMsg = ref('')
 async function loadKeyence () {
   try {
@@ -126,8 +126,15 @@ const recording = computed(() => store.status && ['starting', 'recording', 'stop
           <input v-model="keyence.host" type="text" spellcheck="false" /></label>
         <label class="field"><span class="label">{{ t('cameras.keyencePort') }}</span>
           <input v-model.number="keyence.port" type="number" min="1" max="65535" /></label>
+        <label class="field"><span class="label">{{ t('cameras.keyenceTriggerMode') }}</span>
+          <select v-model="keyence.trigger">
+            <option :value="true">{{ t('cameras.keyenceTriggerOn') }}</option>
+            <option :value="false">{{ t('cameras.keyenceTriggerOff') }}</option>
+          </select>
+        </label>
         <label class="field"><span class="label">{{ t('cameras.keyenceInterval') }} (s)</span>
-          <input v-model.number="keyence.trigger_interval_s" type="number" min="0.5" max="300" step="0.5" /></label>
+          <input v-model.number="keyence.trigger_interval_s" type="number" min="0.5" max="300" step="0.5"
+                 :disabled="!keyence.trigger" /></label>
         <label class="field"><span class="label">{{ t('cameras.keyenceFtpPort') }}</span>
           <input v-model.number="keyence.ftp_port" type="number" min="1" max="65535" /></label>
       </div>
@@ -194,7 +201,7 @@ h1 { font-size: var(--fs-xl); }
 .testcell { display: flex; align-items: center; gap: 10px; min-width: 300px; }
 .actions { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
-.krow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.krow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .check { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .check input { width: 16px; height: 16px; }
 .gap { margin-top: 16px; }

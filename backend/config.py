@@ -44,7 +44,7 @@ DEFAULTS = {
     "preview": {"interval_ms": 1000, "cache_s": 0.4, "timeout_s": 4.0, "thermal_matrix_ms": 2000},
     # mode: "off" | "iv3" (trigger over TCP, receive images over FTP) | "tcp" (text records)
     "keyence": {"mode": "off", "host": "192.168.1.40", "port": 8500, "delimiter": "\\r",
-                "trigger_interval_s": 5.0, "ftp_port": 2121, "ftp_user": "ftpuser",
+                "trigger": True, "trigger_interval_s": 5.0, "ftp_port": 2121, "ftp_user": "ftpuser",
                 "ftp_pass": "ftppass", "ftp_wait_s": 2.0, "stale_after_s": 0,
                 "ftp_passive_ports": [2130, 2140], "image_width": 1520, "image_height": 960,
                 "preview_interval_s": 3.0},
@@ -167,6 +167,7 @@ def public(cfg):
         "thermal_matrix_ms": cfg["preview"]["thermal_matrix_ms"],
         "required_metadata": cfg["required_metadata"],
         "keyence": {"mode": cfg["keyence"]["mode"], "host": cfg["keyence"]["host"],
+                    "trigger": cfg["keyence"]["trigger"],
                     "trigger_interval_s": cfg["keyence"]["trigger_interval_s"],
                     "ftp_port": cfg["keyence"]["ftp_port"],
                     "preview_interval_s": cfg["keyence"]["preview_interval_s"]},

@@ -80,7 +80,9 @@ onBeforeUnmount(() => {
         <p v-else class="small muted wait">{{ t('setup.keyenceWaiting') }}</p>
       </div>
       <table class="kv small">
-        <tr><th>{{ t('cameras.keyenceInterval') }}</th><td class="num">{{ info.trigger_interval_s }} s</td></tr>
+        <tr><th>{{ t('cameras.keyenceTriggerMode') }}</th>
+          <td>{{ info.trigger_enabled === false || info.trigger === false ? t('cameras.keyenceTriggerOff') : t('cameras.keyenceTriggerOn') }}</td></tr>
+        <tr v-if="info.trigger !== false"><th>{{ t('cameras.keyenceInterval') }}</th><td class="num">{{ info.trigger_interval_s }} s</td></tr>
         <tr><th>{{ t('cameras.keyenceFtpPort') }}</th><td class="num">{{ info.ftp_port }}</td></tr>
         <tr v-if="info.last_image_age_s !== undefined">
           <th>{{ t('cameras.keyenceLast') }}</th><td class="num">{{ t('cameras.keyenceAge', { v: info.last_image_age_s }) }}</td>
@@ -89,6 +91,7 @@ onBeforeUnmount(() => {
         <tr v-for="(v, k) in (info.result || {})" :key="k"><th>{{ k }}</th><td class="num">{{ v }}</td></tr>
       </table>
     </div>
+    <p v-if="info && info.last_error" class="small warntext">{{ t('cameras.keyenceRefused', { v: info.last_error }) }}</p>
     <p v-if="message" class="small" :class="ok ? 'oktext' : 'err'">{{ message }}</p>
   </section>
 </template>
@@ -103,5 +106,6 @@ table.kv { flex: 1 1 auto; border-collapse: collapse; }
 .kv td { padding: 4px 0; }
 .kv tr + tr th, .kv tr + tr td { border-top: 1px solid var(--line); }
 .oktext { color: var(--ok); margin-top: 8px; }
+.warntext { color: var(--warn-ink); margin-top: 8px; }
 .err { color: var(--fault); margin-top: 8px; }
 </style>

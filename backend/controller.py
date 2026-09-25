@@ -184,7 +184,7 @@ class Controller(object):
         kc = self.cfg["keyence"]
         if kc["mode"] != "iv3":
             return {"mode": kc["mode"]}
-        state = {"mode": "iv3", "host": kc["host"], "port": int(kc["port"]),
+        state = {"mode": "iv3", "host": kc["host"], "port": int(kc["port"]), "trigger": kc["trigger"],
                  "trigger_interval_s": kc["trigger_interval_s"], "ftp_port": kc["ftp_port"]}
         if self.state in ACTIVE:
             return dict(self.keyence_state or state, recording=True)
@@ -239,6 +239,9 @@ class Controller(object):
         st = dict(self.keyence_state or {"mode": self.cfg["keyence"]["mode"]})
         rx = self.keyence_preview if self.keyence_preview else (
             self.recording.keyence if self.recording and self.state in ACTIVE else None)
+        if rx is not None:
+            st["trigger_enabled"] = getattr(rx, "trigger_enabled", None)
+            st["last_error"] = getattr(rx, "last_error", "")
         if rx is not None and getattr(rx, "last_image_t", None):
             st["last_image_age_s"] = round(self.clock.now() - rx.last_image_t, 1)
             st["trigger_no"] = rx.last_trigger_no
@@ -259,11 +262,12 @@ class Controller(object):
             self._start_keyence_preview()
         rx = self.keyence_preview
         before = rx.images
-        deadline = time.time() + 8
+        deadline = time.time() + max(8, float(self.cfg["keyence"]["preview_interval_s"]) * 2)
         while time.time() < deadline and rx.images == before:
             time.sleep(0.2)
         return {"ok": rx.images > before, "images": rx.images, "trigger_no": rx.last_trigger_no,
-                "connected": rx.connected, "failed": rx.failed}
+                "connected": rx.connected, "failed": rx.failed,
+                "trigger_enabled": rx.trigger_enabled, "error": rx.last_error}
 
     def update_keyence(self, data):
         with self.lock:
@@ -271,6 +275,8 @@ class Controller(object):
             kc = dict(self.cfg["keyence"])
             if data.get("mode") in ("off", "iv3", "tcp"):
                 kc["mode"] = data["mode"]
+            if "trigger" in data:
+                kc["trigger"] = bool(data["trigger"])
             if data.get("host"):
                 if not HOST_RE.match(str(data["host"]).strip()):
                     raise ValueError("invalid_address")

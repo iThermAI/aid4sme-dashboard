@@ -77,7 +77,7 @@ const en = {
     ffc_freeze_start: 'Shutter calibration', ffc_freeze_end: 'Shutter calibration ended',
     radiometric_error: 'Temperature data request failed', radiometric_stopped: 'Temperature data stopped',
     keyence_connected: 'Keyence connected', keyence_error: 'Keyence connection error',
-    keyence_ftp_started: 'Keyence image server started', keyence_connect_failed: 'Keyence not reachable', start_failed: 'Start failed'
+    keyence_ftp_started: 'Keyence image server started', keyence_receive_only: 'Keyence: receiving images only', keyence_connect_failed: 'Keyence not reachable', start_failed: 'Start failed'
   },
   stopReason: {
     operator: 'Stopped by the operator', planned_duration: 'Planned duration reached',
@@ -133,6 +133,9 @@ const en = {
     keyenceLast: 'Last picture', keyenceAge: '{v} s ago', keyenceImages: 'Pictures this session',
     keyenceInterval: 'Picture every', keyenceFtpPort: 'FTP port on this PC', keyencePort: 'Trigger port',
     keyenceResult: 'Latest result from the camera', keyenceMode: 'Recording mode',
+    keyenceTriggerMode: 'Trigger', keyenceTriggerOn: 'The dashboard triggers the camera',
+    keyenceTriggerOff: 'The camera triggers itself',
+    keyenceRefused: 'The camera refused the trigger command ({v}); recording whatever it sends by itself.',
     keyenceModeOff: 'Off', keyenceModeIv3: 'IV3 images',
     frames: '{v} fps', gopFrames: '{v} frames'
   },
@@ -285,7 +288,7 @@ const sl = {
     ffc_freeze_start: 'Kalibracija zaklopa', ffc_freeze_end: 'Kalibracija zaklopa končana',
     radiometric_error: 'Zahteva za temperaturne podatke ni uspela', radiometric_stopped: 'Temperaturni podatki ustavljeni',
     keyence_connected: 'Keyence povezan', keyence_error: 'Napaka povezave Keyence',
-    keyence_ftp_started: 'Strežnik za slike Keyence zagnan', keyence_connect_failed: 'Keyence ni dosegljiv', start_failed: 'Zagon ni uspel'
+    keyence_ftp_started: 'Strežnik za slike Keyence zagnan', keyence_receive_only: 'Keyence: samo sprejemanje slik', keyence_connect_failed: 'Keyence ni dosegljiv', start_failed: 'Zagon ni uspel'
   },
   stopReason: {
     operator: 'Ustavil operater', planned_duration: 'Dosežen načrtovani čas',
@@ -341,6 +344,9 @@ const sl = {
     keyenceLast: 'Zadnja slika', keyenceAge: 'pred {v} s', keyenceImages: 'Slik v tej seji',
     keyenceInterval: 'Slika vsakih', keyenceFtpPort: 'Vrata FTP na tem računalniku', keyencePort: 'Vrata za proženje',
     keyenceResult: 'Zadnji rezultat kamere', keyenceMode: 'Način snemanja',
+    keyenceTriggerMode: 'Proženje', keyenceTriggerOn: 'Kamero proži nadzorna plošča',
+    keyenceTriggerOff: 'Kamera se proži sama',
+    keyenceRefused: 'Kamera je zavrnila ukaz za proženje ({v}); snema se, kar pošlje sama.',
     keyenceModeOff: 'Izklopljeno', keyenceModeIv3: 'Slike IV3',
     frames: '{v} sl./s', gopFrames: '{v} sličic'
   },

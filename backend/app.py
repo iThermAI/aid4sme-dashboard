@@ -6,12 +6,6 @@ import logging
 import mimetypes
 import os
 
-# Windows can map .js to text/plain in the registry; browsers then refuse to run the dashboard.
-mimetypes.add_type("application/javascript", ".js")
-mimetypes.add_type("text/css", ".css")
-mimetypes.add_type("image/svg+xml", ".svg")
-mimetypes.add_type("font/woff2", ".woff2")
-
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +14,12 @@ from . import config as config_mod
 from .controller import Controller, StateError
 
 log = logging.getLogger("aid4sme")
+
+# Windows can map .js to text/plain in the registry; browsers then refuse to run the dashboard.
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("font/woff2", ".woff2")
 
 
 def create_app(cfg):

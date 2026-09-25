@@ -4,9 +4,11 @@ Interface: start() / stop() / finish(timeout) / check() / status(), same as the
 other streams. Two implementations:
 
   off : nothing is recorded
-  iv3 : Keyence IV3 in image-capture mode. The dashboard triggers the camera
-        over TCP at a fixed interval and runs an FTP server that receives the
-        pushed JPEG and its result text. Images are stored untouched, with the
+  iv3 : Keyence IV3 in image-capture mode. The dashboard runs an FTP server
+        that receives the JPEG and result text the camera pushes. If the camera
+        accepts trigger commands ("trigger": true) it is also triggered over TCP
+        at a fixed interval; when the sensor triggers itself, set "trigger" to
+        false, or let the receiver fall back to it after the camera refuses. Images are stored untouched, with the
         trigger and arrival times in keyence/index.csv. No OCR happens here:
         the pictures are raw data, read later by the dataset builder.
   tcp : TCP client for IV3 non-procedural output. Records are split on the
@@ -167,6 +169,9 @@ class Iv3Receiver(object):
         self.triggers = 0
         self.failed = 0
         self.connected = False
+        self.trigger_enabled = bool(kcfg.get("trigger", True))
+        self.trigger_refused = 0
+        self.last_error = ""
         self.last_image_t = None
         self.last_image_path = None
         self.last_result = {}
@@ -183,10 +188,13 @@ class Iv3Receiver(object):
         self.writer = csv.DictWriter(self.index, fieldnames=IV3_FIELDS, extrasaction="ignore")
         self.writer.writeheader()
         self._start_ftp()
-        t = threading.Thread(target=self._trigger_loop, name="keyence-trigger")
-        t.daemon = True
-        t.start()
-        self.threads.append(t)
+        if self.trigger_enabled:
+            t = threading.Thread(target=self._trigger_loop, name="keyence-trigger")
+            t.daemon = True
+            t.start()
+            self.threads.append(t)
+        else:
+            self.emit("keyence_receive_only", host=self.cfg["host"])
 
     def _start_ftp(self):
         from pyftpdlib.authorizers import DummyAuthorizer
@@ -247,6 +255,16 @@ class Iv3Receiver(object):
                 if resp.startswith("ER"):
                     self._row(dict(self.pending, kind="trigger", error=resp))
                     self.failed += 1
+                    self.last_error = resp
+                    self.trigger_refused += 1
+                    # The sensor triggers itself (or is in setup mode): stop asking and
+                    # simply record whatever it pushes, instead of failing all run long.
+                    if self.trigger_refused >= 3:
+                        self.trigger_enabled = False
+                        self.emit("keyence_receive_only", reason=resp, level="warning")
+                        break
+                else:
+                    self.trigger_refused = 0
             except OSError as e:
                 self.connected = False
                 self.failed += 1
@@ -331,6 +349,8 @@ class Iv3Receiver(object):
             3 * float(self.cfg.get("trigger_interval_s", 5.0)), 10.0)
         if self.stop_event.is_set():
             health = "stopped"
+        elif not self.trigger_enabled and self.last_image_t is None and now - self.t_start < 60:
+            health = "starting"          # waiting for the camera to push on its own
         elif self.last_image_t is None:
             health = "starting" if now - self.t_start < stale else "stalled"
         else:
@@ -343,6 +363,7 @@ class Iv3Receiver(object):
         return {"name": self.name, "type": "keyence", "health": self.health,
                 "records": self.images, "triggers": self.triggers, "failed": self.failed,
                 "connected": self.connected, "trigger_no": self.last_trigger_no,
+                "trigger_enabled": self.trigger_enabled, "last_error": self.last_error,
                 "since_record_s": round(now - self.last_image_t, 1) if self.last_image_t else None}
 
 
