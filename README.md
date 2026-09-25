@@ -162,7 +162,7 @@ The build targets Chrome 109, so it runs on Windows 7. The fonts (IBM Plex Sans 
 | `radiometric.rate_hz` | Radiometric requests per second per camera (default `1.0`). |
 | `required_metadata` | Run-detail fields that must be filled in before recording. |
 | `min_free_disk_gb` | Recording is blocked below this free space (default `20`). |
-| `keyence` | `mode` is `off`, `tcp` or `ftp`, plus `host` and `port` of the IV3. |
+| `keyence` | `mode` is `off`, `iv3` or `tcp`; see the Keyence IV3 section. |
 | `ffc_path` | Optional ISAPI path that triggers a shutter calibration. Leave empty to hide the button. |
 
 When camera connections are saved from the dashboard, the previous `config.local.json` is kept as a timestamped `.bak` file next to it.
@@ -240,7 +240,7 @@ One folder per run, named `<date>_<time>_<mould>_run<NNN>`:
     ├── radiometric_cam2/
     ├── camera_config/cam1/      Every ISAPI settings document at the start of the run
     ├── camera_config/cam2/
-    └── keyence/                 OCR records, if enabled
+    └── keyence/                 IV3 images, result files and index.csv
 ```
 
 - **Regions** are stored in `metadata.json` in three coordinate systems:
@@ -251,6 +251,49 @@ One folder per run, named `<date>_<time>_<mould>_run<NNN>`:
   They are applied by the training pipeline and never cut into the recording.
 - **Radiometric files** are saved exactly as the camera sent them. Each contains the matrix as float32 °C, after a JSON header and a JPEG.
 - **Timing:** video files carry stream-relative timestamps only. `verification.json` gives each stream's measured start offset and its uncertainty, which is the basis for aligning the streams later.
+
+---
+
+## Keyence IV3 images
+
+The IV3 is used as a camera, not as an OCR reader: it photographs the moulding
+machine's screen, and the pictures are read later. Set `keyence.mode` to `"iv3"` in
+`config.local.json`:
+
+```json
+"keyence": {
+  "mode": "iv3",
+  "host": "192.168.1.40",
+  "port": 8500,
+  "trigger_interval_s": 5.0,
+  "ftp_port": 2121,
+  "ftp_user": "ftpuser",
+  "ftp_pass": "ftppass",
+  "ftp_passive_ports": [2130, 2140]
+}
+```
+
+While a run is recording, the dashboard triggers the camera over TCP every
+`trigger_interval_s` seconds and runs an FTP server that receives the pushed image and
+its result file. Nothing is recorded between runs.
+
+**On the camera**, in the IV3 software, set image output to FTP, pointing at the capture
+PC's address and `ftp_port`, with the same user and password. **On the capture PC**, allow
+incoming TCP on `ftp_port` and on the passive range in the Windows firewall.
+
+Files land in `raw/keyence/` exactly as the camera sent them, and `raw/keyence/index.csv`
+records, for every image: the time the trigger was sent, the time the camera answered, the
+time the file finished transferring, the file name and size, and the camera's own trigger
+number, timestamp and result status.
+
+**OCR is a later step and needs no re-recording.** The dataset builder writes
+`derived/keyence.csv`, one row per trigger, with the image path, the host time of the
+photograph, its uncertainty and an empty `ocr_text` column. An OCR script fills that column
+by reading the images the file points at, and can be re-run whenever it improves.
+
+The photograph's time is taken as the midpoint between the trigger leaving and the camera
+answering, so the FTP transfer afterwards doesn't affect it. Expect a few milliseconds of
+uncertainty, which is far better than the temperature data.
 
 ---
 
@@ -270,6 +313,7 @@ python tools\build_dataset.py D:\aid4sme_data\sessions --all
 | `<stream>_motion.csv` | Per-frame motion signal used for alignment |
 | `radiometric_<cam>.npy` | float32 array `[matrices, 192, 256]` in °C |
 | `radiometric_<cam>.csv` | Capture time and timing uncertainty of every matrix |
+| `keyence.csv` | One row per IV3 trigger: image path, host time, trigger number, empty `ocr_text` |
 | `sync.json` | Measured offset of each stream, with correlation quality |
 | `telemetry.jsonl` | Events, operator notes and matrices in one time-ordered file |
 | `dataset.json` | What was produced |

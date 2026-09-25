@@ -44,7 +44,7 @@ const en = {
     devices: 'Devices', online: 'Online', offline: 'Not responding', checking: 'Checking…',
     clockOk: 'Clock in step', clockOff: 'Clock {v} s off',
     settingsOk: 'Settings as recommended', settingsWarn: 'Check {n} settings', settingsChanged: '{n} changed since profile',
-    keyenceNone: 'Not connected yet',
+    keyenceNone: 'Not recording', keyenceIv3: 'IV3, image every {v} s', keyenceWaiting: 'Waiting for the first image',
     start: 'Start recording', startingBtn: 'Starting…'
   },
   view: {
@@ -62,7 +62,7 @@ const en = {
     saturated: 'Temperatures at the top of the {r} range were measured by {s}. Hot areas may be clipped; if it repeats, switch both cameras to the high range.',
     table: { stream: 'Stream', status: 'Status', rate: 'Rate', written: 'Written', last: 'Last data', minute: 'Last minute', details: 'Details' },
     health: { ok: 'Recording', starting: 'Connecting', stalled: 'No data', dead: 'Stopped', stopping: 'Stopping', stopped: 'Stopped', off: 'Not connected' },
-    frames: '{n} frames, {m} Mbit/s', maxT: 'max {v} °C', response: 'response {v} ms', freezes: '{n} shutter freezes',
+    frames: '{n} frames, {m} Mbit/s', images: '{n} images, {t} triggers', triggerNo: 'trigger no. {v}', maxT: 'max {v} °C', response: 'response {v} ms', freezes: '{n} shutter freezes',
     failed: '{n} failed', ceiling: '{n} at range ceiling', shutter: 'shutter',
     notes: 'Notes during the run', notesHint: 'Saved with the exact time, e.g. “short shot”, “mould opened”.',
     notePlaceholder: 'What happened?', addNote: 'Add note', events: 'Recent events',
@@ -75,7 +75,8 @@ const en = {
     verification_done: 'Files checked', session_closed: 'Session closed', range_saturation: 'Range ceiling reached',
     ffc_freeze_start: 'Shutter calibration', ffc_freeze_end: 'Shutter calibration ended',
     radiometric_error: 'Temperature data request failed', radiometric_stopped: 'Temperature data stopped',
-    keyence_connected: 'Keyence connected', keyence_error: 'Keyence connection error', keyence_connect_failed: 'Keyence not reachable', start_failed: 'Start failed'
+    keyence_connected: 'Keyence connected', keyence_error: 'Keyence connection error',
+    keyence_ftp_started: 'Keyence image server started', keyence_connect_failed: 'Keyence not reachable', start_failed: 'Start failed'
   },
   stopReason: {
     operator: 'Stopped by the operator', planned_duration: 'Planned duration reached',
@@ -187,7 +188,8 @@ const en = {
   warning: {
     clock_drift: '{c} clock is {v} s off the capture PC.', settings_changed: '{c}: {n} settings differ from the reference profile.',
     settings_not_recommended: '{c}: {n} settings differ from the recommendation.', no_reference: 'No reference camera profile chosen yet.',
-    no_regions: 'No regions drawn.', no_cad: 'No part model loaded.'
+    no_regions: 'No regions drawn.', no_cad: 'No part model loaded.',
+    keyence_offline: 'The Keyence IV3 ({ip}) is not answering; its images will be missing from this run.'
   },
   error: {
     busy_recording: 'Not possible while a recording is running.', previews_paused: 'Previews are paused while recording.',
@@ -243,7 +245,7 @@ const sl = {
     devices: 'Naprave', online: 'Povezana', offline: 'Se ne odziva', checking: 'Preverjanje …',
     clockOk: 'Ura usklajena', clockOff: 'Ura odstopa {v} s',
     settingsOk: 'Nastavitve kot priporočeno', settingsWarn: 'Preverite nastavitve ({n})', settingsChanged: 'Spremenjeno glede na profil: {n}',
-    keyenceNone: 'Še ni povezano',
+    keyenceNone: 'Se ne snema', keyenceIv3: 'IV3, slika vsakih {v} s', keyenceWaiting: 'Čakanje na prvo sliko',
     start: 'Začni snemanje', startingBtn: 'Zagon …'
   },
   view: {
@@ -261,7 +263,7 @@ const sl = {
     saturated: '{s} je izmeril(a) temperature na zgornji meji območja {r}. Vroča mesta so lahko odrezana; če se ponovi, obe kameri preklopite na visoko območje.',
     table: { stream: 'Tok', status: 'Stanje', rate: 'Hitrost', written: 'Zapisano', last: 'Zadnji podatki', minute: 'Zadnja minuta', details: 'Podrobnosti' },
     health: { ok: 'Snemanje', starting: 'Povezovanje', stalled: 'Ni podatkov', dead: 'Ustavljeno', stopping: 'Ustavljanje', stopped: 'Ustavljeno', off: 'Ni povezano' },
-    frames: '{n} sličic, {m} Mbit/s', maxT: 'maks. {v} °C', response: 'odziv {v} ms', freezes: 'kalibracij zaklopa: {n}',
+    frames: '{n} sličic, {m} Mbit/s', images: 'slik: {n}, prožitev: {t}', triggerNo: 'št. prožitve {v}', maxT: 'maks. {v} °C', response: 'odziv {v} ms', freezes: 'kalibracij zaklopa: {n}',
     failed: 'neuspelih: {n}', ceiling: 'na zgornji meji: {n}', shutter: 'zaklop',
     notes: 'Opombe med snemanjem', notesHint: 'Shranijo se s točnim časom, npr. »nepopoln izdelek«, »orodje odprto«.',
     notePlaceholder: 'Kaj se je zgodilo?', addNote: 'Dodaj opombo', events: 'Zadnji dogodki',
@@ -274,7 +276,8 @@ const sl = {
     verification_done: 'Datoteke preverjene', session_closed: 'Posnetek zaključen', range_saturation: 'Dosežena zgornja meja območja',
     ffc_freeze_start: 'Kalibracija zaklopa', ffc_freeze_end: 'Kalibracija zaklopa končana',
     radiometric_error: 'Zahteva za temperaturne podatke ni uspela', radiometric_stopped: 'Temperaturni podatki ustavljeni',
-    keyence_connected: 'Keyence povezan', keyence_error: 'Napaka povezave Keyence', keyence_connect_failed: 'Keyence ni dosegljiv', start_failed: 'Zagon ni uspel'
+    keyence_connected: 'Keyence povezan', keyence_error: 'Napaka povezave Keyence',
+    keyence_ftp_started: 'Strežnik za slike Keyence zagnan', keyence_connect_failed: 'Keyence ni dosegljiv', start_failed: 'Zagon ni uspel'
   },
   stopReason: {
     operator: 'Ustavil operater', planned_duration: 'Dosežen načrtovani čas',
@@ -386,7 +389,8 @@ const sl = {
   warning: {
     clock_drift: 'Ura za {c} odstopa {v} s od računalnika za zajem.', settings_changed: '{c}: nastavitev, drugačnih od referenčnega profila: {n}.',
     settings_not_recommended: '{c}: nastavitev, drugačnih od priporočil: {n}.', no_reference: 'Referenčni profil kamer še ni izbran.',
-    no_regions: 'Ni narisanih območij.', no_cad: '3D model izdelka ni naložen.'
+    no_regions: 'Ni narisanih območij.', no_cad: '3D model izdelka ni naložen.',
+    keyence_offline: 'Keyence IV3 ({ip}) se ne odziva; slike tega snemanja bodo manjkale.'
   },
   error: {
     busy_recording: 'Med snemanjem ni mogoče.', previews_paused: 'Predogledi so med snemanjem ustavljeni.',

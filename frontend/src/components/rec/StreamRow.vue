@@ -32,6 +32,13 @@ const details = computed(() => {
     if (s.saturated) p.push(t('rec.ceiling', { n: s.saturated }))
     return p.join(', ')
   }
+  if (s.type === 'keyence') {
+    const p = []
+    if (s.triggers !== undefined) p.push(t('rec.images', { n: s.records, t: s.triggers }))
+    if (s.trigger_no) p.push(t('rec.triggerNo', { v: s.trigger_no }))
+    if (s.failed) p.push(t('rec.failed', { n: s.failed }))
+    return p.length ? p.join(', ') : (s.note || '')
+  }
   return s.note || ''
 })
 

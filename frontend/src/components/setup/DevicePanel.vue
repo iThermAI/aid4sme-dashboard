@@ -4,6 +4,7 @@ import { store } from '../../store.js'
 import { t, camName } from '../../i18n.js'
 
 const devices = computed(() => (store.status ? store.status.devices : []))
+const keyence = computed(() => (store.status ? store.status.keyence : null) || { mode: 'off' })
 const clockLimit = 2
 function clockOff (d) { return d.drift_s !== undefined && d.drift_s !== null && Math.abs(d.drift_s) > clockLimit }
 function signed (v) { return (v > 0 ? '+' : '') + v }
@@ -32,11 +33,19 @@ function signed (v) { return (v > 0 ? '+' : '') + v }
           <span v-else class="muted">{{ t('setup.settingsOk') }}</span>
         </div>
       </li>
-      <li v-if="store.config.keyence_mode === 'off'">
+      <li>
         <div class="row1">
-          <span class="dot idle"></span>
+          <span class="dot" :class="keyence.mode !== 'iv3' ? 'idle' : keyence.reachable === false ? 'fault' : keyence.reachable ? '' : 'idle'"></span>
           <span class="name">{{ t('stream.keyence') }}</span>
-          <span class="state small muted">{{ t('setup.keyenceNone') }}</span>
+          <span v-if="keyence.host" class="muted small num">{{ keyence.host }}</span>
+          <span class="state small" :class="{ bad: keyence.mode === 'iv3' && keyence.reachable === false }">
+            {{ keyence.mode !== 'iv3' ? t('setup.keyenceNone')
+               : keyence.reachable === false ? t('setup.offline')
+               : keyence.reachable ? t('setup.online') : t('setup.checking') }}
+          </span>
+        </div>
+        <div v-if="keyence.mode === 'iv3' && keyence.reachable" class="row2 small">
+          <span class="muted">{{ t('setup.keyenceIv3', { v: keyence.trigger_interval_s }) }}</span>
         </div>
       </li>
     </ul>

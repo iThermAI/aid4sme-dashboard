@@ -18,3 +18,6 @@ urllib3==1.26.18
 certifi==2023.7.22
 charset-normalizer==3.3.2
 numpy==1.24.4
+
+# Keyence IV3 image capture (keyence.mode = "iv3")
+pyftpdlib==1.5.10

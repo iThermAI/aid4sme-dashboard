@@ -29,7 +29,15 @@
     "mode": "off",
     "host": "192.168.1.40",
     "port": 8500,
-    "delimiter": "\\r"
+    "trigger_interval_s": 5.0,
+    "ftp_port": 2121,
+    "ftp_user": "ftpuser",
+    "ftp_pass": "ftppass",
+    "ftp_passive_ports": [
+      2130,
+      2140
+    ],
+    "ftp_wait_s": 2.0
   },
   "required_metadata": [
     "operator",

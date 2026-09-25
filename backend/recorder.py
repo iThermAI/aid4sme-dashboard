@@ -167,7 +167,10 @@ class Recording(object):
             "streams": {},
             "radiometric": {"enabled": cfg["radiometric"]["enabled"], "rate_hz": cfg["radiometric"]["rate_hz"],
                             "sensor": [cfg["radiometric"]["sensor_width"], cfg["radiometric"]["sensor_height"]]},
-            "keyence": {"mode": cfg["keyence"]["mode"]},
+            "keyence": {"mode": cfg["keyence"]["mode"], "host": cfg["keyence"]["host"],
+                        "trigger_interval_s": cfg["keyence"]["trigger_interval_s"],
+                        "files": "raw/keyence/ (images and result files as the camera sent them)",
+                        "index": "raw/keyence/index.csv"},
             "segment_seconds": cfg["segment_seconds"],
             "timebase": "Host master clock: Unix epoch seconds, perf_counter resolution. "
                         "All t_* fields in this session share it.",

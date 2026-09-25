@@ -276,6 +276,61 @@ def build_radiometric(raw_dir, cam, out_dir, sensor):
 
 
 # --------------------------------------------------------------------------- #
+# Keyence IV3 images
+# --------------------------------------------------------------------------- #
+def build_keyence(raw_dir, out_dir):
+    """Pair each IV3 image with its result file and its host time.
+
+    The images are left where they are: OCR is a separate step that can be run
+    later, or re-run, by reading keyence.csv and the files it points at.
+    """
+    src = os.path.join(raw_dir, "keyence")
+    index = os.path.join(src, "index.csv")
+    if not os.path.isfile(index):
+        return None
+    by_seq = {}
+    with open(index) as f:
+        for r in csv.DictReader(f):
+            seq = r.get("seq") or "0"
+            e = by_seq.setdefault(seq, {"seq": int(seq), "image": "", "result": "", "host_time": None,
+                                        "uncertainty_ms": "", "trigger_no": "", "device_time": "",
+                                        "total_status": "", "error": ""})
+            if r.get("kind") == "image" and r.get("file"):
+                e["image"] = "raw/keyence/" + r["file"]
+                # The picture is taken between the trigger leaving and the response
+                # arriving; the FTP transfer happens afterwards and is not part of it.
+                if r.get("t_trigger") and r.get("t_response"):
+                    t0, t1 = float(r["t_trigger"]), float(r["t_response"])
+                    e["host_time"] = round((t0 + t1) / 2, 6)
+                    e["uncertainty_ms"] = round((t1 - t0) * 1000 / 2, 1)
+                elif r.get("t_received"):
+                    e["host_time"] = float(r["t_received"])
+                    e["uncertainty_ms"] = ""
+            elif r.get("kind") == "result" and r.get("file"):
+                e["result"] = "raw/keyence/" + r["file"]
+                for k in ("trigger_no", "device_time", "total_status"):
+                    if r.get(k):
+                        e[k] = r[k]
+            if r.get("error"):
+                e["error"] = r["error"]
+    rows = [e for e in sorted(by_seq.values(), key=lambda x: x["seq"]) if e["image"] or e["error"]]
+    if not rows:
+        return None
+    fields = ["seq", "host_time", "uncertainty_ms", "image", "result", "trigger_no", "device_time",
+              "total_status", "ocr_text", "error"]
+    with open(os.path.join(out_dir, "keyence.csv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    timed = [r for r in rows if r["host_time"]]
+    return {"file": "keyence.csv", "images": sum(1 for r in rows if r["image"]),
+            "with_time": len(timed), "failed": sum(1 for r in rows if r["error"]),
+            "first_host_time": timed[0]["host_time"] if timed else None,
+            "last_host_time": timed[-1]["host_time"] if timed else None,
+            "ocr": "not run - fill the ocr_text column from the image paths"}
+
+
+# --------------------------------------------------------------------------- #
 # One session
 # --------------------------------------------------------------------------- #
 def build(session, args):
@@ -345,6 +400,11 @@ def build(session, args):
             print("  radiometric %-3s %d matrices %s, median uncertainty %.0f ms, max %.1f C"
                   % (cam, rad["matrices"], rad["shape"], rad["median_uncertainty_ms"], rad["tmax_c"]))
 
+    keyence = build_keyence(raw, out)
+    if keyence:
+        report["keyence"] = keyence
+        print("  keyence        %d images, %d with a measured time" % (keyence["images"], keyence["with_time"]))
+
     # ---- alignment --------------------------------------------------------- #
     reference = args.reference if args.reference in signals else (sorted(signals)[0] if signals else None)
     offsets, problem = ({}, "no motion signals") if not reference else align_streams(signals, reference)
@@ -364,6 +424,10 @@ def build(session, args):
             "arrival_estimate_ms": a,
             "difference_vs_arrival_ms": None if a is None else round(r["offset_ms"] - a, 1),
             "trust": "low" if r["quality"] < 0.3 else "medium" if r["quality"] < 0.6 else "high"}
+    if report.get("keyence"):
+        sync["streams"]["keyence"] = {
+            "offset_ms": None, "method": "trigger midpoint, see keyence.csv",
+            "median_uncertainty_ms": None, "trust": "medium"}
     for cam, rad in report["radiometric"].items():
         sync["streams"]["%s_radiometric" % cam] = {
             "offset_ms": None, "method": "arrival midpoint, see radiometric_<cam>.csv",
@@ -382,6 +446,13 @@ def build(session, args):
             pass
     for note in md.get("operator_notes_during_run") or []:
         entries.append({"host_time": note.get("t"), "kind": "note", "data": note})
+    if report.get("keyence"):
+        with open(os.path.join(out, "keyence.csv")) as f:
+            for r in csv.DictReader(f):
+                if r.get("host_time"):
+                    entries.append({"host_time": float(r["host_time"]), "kind": "keyence",
+                                    "data": {"image": r["image"], "trigger_no": r["trigger_no"],
+                                             "total_status": r["total_status"]}})
     for cam in report["radiometric"]:
         with open(os.path.join(out, "radiometric_%s.csv" % cam)) as f:
             for r in csv.DictReader(f):
@@ -400,7 +471,9 @@ def build(session, args):
     print("  alignment (reference %s):" % reference)
     for name, r in sorted(sync["streams"].items()):
         if r.get("offset_ms") is None:
-            print("     %-22s arrival midpoint, +/- %.0f ms" % (name, r["median_uncertainty_ms"]))
+            unc = r.get("median_uncertainty_ms")
+            print("     %-22s %s%s" % (name, r.get("method", "arrival midpoint"),
+                                       "" if unc is None else ", +/- %.0f ms" % unc))
         else:
             print("     %-22s %+8.1f ms  correlation %.2f (%s)   arrival estimate %s ms"
                   % (name, r["offset_ms"], r["correlation"], r["trust"], r["arrival_estimate_ms"]))

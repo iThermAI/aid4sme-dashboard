@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import struct
 import threading
 import time
@@ -63,6 +64,7 @@ class Controller(object):
         self.cameras = self._build_cameras()
         self.devices = {}
         self.camera_checks = {}
+        self.keyence_state = None
         self.recording = None
         self.prefs = self._load_prefs()
         self.draft = self._load_draft()
@@ -142,6 +144,7 @@ class Controller(object):
             active = self.state in ACTIVE
             for cam in list(self.cameras.values()):
                 self.devices[cam.id] = self._check_clock(cam)
+            self.keyence_state = self._check_keyence()
             if not active:
                 # Keep the session clock on the wall clock; never while recording.
                 off = self.clock.wall_offset()
@@ -169,6 +172,23 @@ class Controller(object):
         except Exception as e:  # noqa
             entry.update(reachable=False, error=str(e)[:160], auth="401" in str(e))
         return entry
+
+    def _check_keyence(self):
+        """The IV3 only answers while it is reachable; check before a run, not during."""
+        kc = self.cfg["keyence"]
+        if kc["mode"] != "iv3":
+            return {"mode": kc["mode"]}
+        state = {"mode": "iv3", "host": kc["host"], "port": int(kc["port"]),
+                 "trigger_interval_s": kc["trigger_interval_s"], "ftp_port": kc["ftp_port"]}
+        if self.state in ACTIVE:
+            return dict(self.keyence_state or state, recording=True)
+        try:
+            s = socket.create_connection((kc["host"], int(kc["port"])), 1.5)
+            s.close()
+            state["reachable"] = True
+        except OSError as e:
+            state.update(reachable=False, error=type(e).__name__)
+        return state
 
     def reference_profile(self):
         slug = self.prefs.get("reference_profile")
@@ -683,6 +703,9 @@ class Controller(object):
             blockers.append({"code": "disk_low", "free": round(free, 1), "need": self.cfg["min_free_disk_gb"]})
         if self.ffmpeg_major < 0:
             blockers.append({"code": "ffmpeg_missing", "path": self.cfg["ffmpeg"]})
+        ks = self.keyence_state or {}
+        if ks.get("mode") == "iv3" and ks.get("reachable") is False:
+            warnings.append({"code": "keyence_offline", "ip": ks.get("host")})
         if not self.draft.get("regions"):
             warnings.append({"code": "no_regions"})
         if not self.draft.get("cad"):
@@ -789,6 +812,7 @@ class Controller(object):
             "blockers": blockers, "warnings": warnings,
             "next_run": self.next_run_number(self.draft["metadata"].get("mould_id")),
             "reference_profile": ref["name"] if ref else None,
+            "keyence": self.keyence_state,
             "prefs": self.prefs,
             "recording": rec.status() if rec else None,
             "result": rec.result if rec and rec.state == "finished" else None,
