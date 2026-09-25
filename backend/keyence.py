@@ -219,7 +219,18 @@ class Iv3Receiver(object):
         ports = self.cfg.get("ftp_passive_ports") or [2130, 2140]
         Handler.passive_ports = range(int(ports[0]), int(ports[1]) + 1)
         logging.getLogger("pyftpdlib").setLevel(logging.WARNING)
-        self.server = FTPServer(("0.0.0.0", int(self.cfg.get("ftp_port", 2121))), Handler)
+        port = int(self.cfg.get("ftp_port", 2121))
+        last = None
+        for attempt in range(10):
+            try:
+                self.server = FTPServer(("0.0.0.0", port), Handler)
+                break
+            except OSError as e:               # the port may still be closing
+                last = e
+                time.sleep(0.3)
+        else:
+            raise IOError("FTP port %d is in use (%s). Close anything else listening on it."
+                          % (port, last))
         t = threading.Thread(target=self.server.serve_forever, kwargs={"timeout": 0.5, "blocking": True},
                              name="keyence-ftp")
         t.daemon = True

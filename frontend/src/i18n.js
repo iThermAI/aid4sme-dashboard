@@ -86,7 +86,9 @@ const en = {
   },
   summary: {
     ok: 'All streams recorded completely', bad: 'The run finished with problems',
-    recorded: '{t} recorded', folder: 'Session folder',
+    recorded: '{t} recorded', folder: 'Session folder', openFolder: 'Open folder',
+    openFolderHint: 'Opens on the capture PC, not on this screen.',
+    startFailed: 'Nothing was recorded. Reason: {d}',
     verdict: 'Is this run usable for the dataset?', usable: 'Usable', discard: 'Discard', unsure: 'Not sure',
     reason: 'Reason (optional)', reasonPlaceholder: 'e.g. short shot, mould not at temperature',
     verdictSaved: 'Saved with the session',
@@ -208,7 +210,8 @@ const en = {
     name_not_supported: 'This camera does not offer a channel name setting.', name_required: 'Enter a name.',
     invalid_address: 'Enter an IP address or host name, e.g. 192.168.1.30.', user_required: 'Enter the user name.',
     invalid_duration: 'Enter a duration in minutes.', not_glb: 'That is not a binary glTF (.glb) file.',
-    camera_offline: '{d} is not responding.', not_found: 'Not found.', ffc_not_configured: 'Shutter calibration is not configured.',
+    camera_offline: '{d} is not responding.', not_found: 'Not found.',
+    cannot_open_folder: 'The folder could not be opened on the capture PC: {d}', ffc_not_configured: 'Shutter calibration is not configured.',
     generic: 'Something went wrong: {d}'
   }
 }
@@ -297,7 +300,9 @@ const sl = {
   },
   summary: {
     ok: 'Vsi tokovi so v celoti posneti', bad: 'Snemanje se je končalo s težavami',
-    recorded: 'posneto {t}', folder: 'Mapa posnetka',
+    recorded: 'posneto {t}', folder: 'Mapa posnetka', openFolder: 'Odpri mapo',
+    openFolderHint: 'Odpre se na računalniku za zajem, ne na tem zaslonu.',
+    startFailed: 'Nič ni bilo posneto. Razlog: {d}',
     verdict: 'Je ta posnetek uporaben za podatkovni niz?', usable: 'Uporaben', discard: 'Zavrzi', unsure: 'Ni jasno',
     reason: 'Razlog (neobvezno)', reasonPlaceholder: 'npr. nepopoln izdelek, orodje ni na temperaturi',
     verdictSaved: 'Shranjeno s posnetkom',
@@ -419,7 +424,8 @@ const sl = {
     name_not_supported: 'Ta kamera nima nastavitve imena kanala.', name_required: 'Vnesite ime.',
     invalid_address: 'Vnesite naslov IP ali ime gostitelja, npr. 192.168.1.30.', user_required: 'Vnesite uporabniško ime.',
     invalid_duration: 'Vnesite trajanje v minutah.', not_glb: 'To ni binarna datoteka glTF (.glb).',
-    camera_offline: '{d} se ne odziva.', not_found: 'Ni najdeno.', ffc_not_configured: 'Kalibracija zaklopa ni nastavljena.',
+    camera_offline: '{d} se ne odziva.', not_found: 'Ni najdeno.',
+    cannot_open_folder: 'Mape na računalniku za zajem ni bilo mogoče odpreti: {d}', ffc_not_configured: 'Kalibracija zaklopa ni nastavljena.',
     generic: 'Prišlo je do napake: {d}'
   }
 }

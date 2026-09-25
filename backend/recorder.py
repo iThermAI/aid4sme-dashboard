@@ -298,9 +298,12 @@ class Recording(object):
             p.finish(3)
         if self.keyence:
             self.keyence.stop()
-        self.result = {"overall_pass": False, "error": error}
+        self.result = {"overall_pass": False, "error": error, "stop_reason": "start_failed",
+                       "duration_s": 0.0, "video": [], "radiometric": [],
+                       "note": "The recording never started; nothing was captured."}
         if self.t_start is None:
             self.t_start = self.t_stop
+        write_json(os.path.join(self.dir, "verification.json"), self.result)
         self._finalise()
         if self.metadata:
             self.metadata["status"] = "failed"

@@ -62,5 +62,6 @@ export const api = {
 
   sessions: () => request('GET', '/api/sessions'),
   session: (id) => request('GET', `/api/sessions/${enc(id)}`),
-  verdict: (id, verdict, reason) => request('PUT', `/api/sessions/${enc(id)}/verdict`, { verdict, reason })
+  verdict: (id, verdict, reason) => request('PUT', `/api/sessions/${enc(id)}/verdict`, { verdict, reason }),
+  openSession: (id) => request('POST', `/api/sessions/${enc(id)}/open`)
 }

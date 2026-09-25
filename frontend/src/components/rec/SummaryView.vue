@@ -14,6 +14,13 @@ const reason = ref('')
 const saved = ref(false)
 const error = ref('')
 const busy = ref(false)
+const openError = ref('')
+async function openFolder () {
+  openError.value = ''
+  try {
+    await api.openSession(rec.value.session_id)
+  } catch (e) { openError.value = errorText(e) }
+}
 
 const changes = computed(() => {
   const inc = (store.status.prefs && store.status.prefs.auto_increment) || []
@@ -62,6 +69,12 @@ async function next () {
             <span>{{ stopReasonText(rec.stop_reason) }}</span>
           </p>
           <p class="xs muted folder num">{{ t('summary.folder') }}: {{ rec.folder }}</p>
+        <p class="folderline">
+          <button class="btn sm" @click="openFolder">{{ t('summary.openFolder') }}</button>
+          <span class="xs muted">{{ t('summary.openFolderHint') }}</span>
+          <span v-if="openError" class="xs err">{{ openError }}</span>
+        </p>
+        <p v-if="result.error" class="small hint err">{{ t('summary.startFailed', { d: result.error }) }}</p>
           <p v-if="!ok" class="small hint">{{ t('summary.badHint') }}</p>
         </div>
       </div>
@@ -105,6 +118,7 @@ h1 { font-size: var(--fs-2xl); }
 .sub { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
 .strong { color: var(--ink); font-weight: 600; }
 .folder { margin-top: 6px; word-break: break-all; }
+.folderline { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
 .hint { margin-top: 8px; max-width: 70ch; }
 .next { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
 .change { color: var(--primary); font-weight: 600; }

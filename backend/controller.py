@@ -11,6 +11,8 @@ import os
 import re
 import shutil
 import socket
+import subprocess
+import sys
 import struct
 import threading
 import time
@@ -834,6 +836,7 @@ class Controller(object):
             if blockers:
                 raise StateError("blocked")
             self._preview_cache.clear()
+            self._stop_keyence_preview()      # it holds the FTP port the recorder needs
             run = self.next_run_number(self.draft["metadata"].get("mould_id"))
             rec = Recording(self, json.loads(json.dumps(self.draft)), run)
             self.recording = rec
@@ -874,6 +877,24 @@ class Controller(object):
             self._save_draft()
             self._index_at = 0
             return self.draft
+
+    def open_session_folder(self, sid):
+        """Open a session folder in the file manager of the capture PC itself."""
+        if os.path.basename(sid) != sid:
+            raise KeyError(sid)
+        folder = os.path.join(self.sessions_dir, sid)
+        if not os.path.isdir(folder):
+            raise KeyError(sid)
+        try:
+            if hasattr(os, "startfile"):                       # Windows
+                os.startfile(folder)                           # noqa - Windows only
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", folder])
+            else:
+                subprocess.Popen(["xdg-open", folder])
+        except Exception as e:                                 # noqa - no file manager, headless, ...
+            raise StateError("cannot_open_folder:%s" % str(e)[:80])
+        return {"ok": True, "folder": folder}
 
     def set_verdict(self, sid, verdict, reason):
         if verdict not in ("usable", "discard", "unsure", ""):

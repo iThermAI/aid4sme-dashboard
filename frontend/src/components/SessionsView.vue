@@ -40,6 +40,12 @@ async function setVerdict (row, value) {
   } catch (e) { error.value = errorText(e) }
 }
 
+async function openFolder (sid) {
+  try {
+    await api.openSession(sid)
+  } catch (e) { error.value = errorText(e) }
+}
+
 async function toggle (row) {
   if (open.value === row.session_id) { open.value = null; return }
   open.value = row.session_id
@@ -96,7 +102,11 @@ async function toggle (row) {
               <td colspan="10">
                 <p v-if="!detail" class="muted small">{{ t('common.loading') }}</p>
                 <div v-else class="dgrid small">
-                  <div><span class="muted">{{ t('summary.folder') }}</span><span class="num path">{{ detail.folder }}</span></div>
+                  <div>
+                    <span class="muted">{{ t('summary.folder') }}</span>
+                    <span class="num path">{{ detail.folder }}</span>
+                    <button class="link" @click="openFolder(r.session_id)">{{ t('summary.openFolder') }}</button>
+                  </div>
                   <div><span class="muted">{{ t('sessions.result') }}</span><span>{{ stopReasonText(detail.metadata.stop_reason) }}</span></div>
                   <div v-if="detail.metadata.operator_verdict && detail.metadata.operator_verdict.reason">
                     <span class="muted">{{ t('summary.reason') }}</span><span>{{ detail.metadata.operator_verdict.reason }}</span>

@@ -258,6 +258,10 @@ def create_app(cfg):
         except (OSError, ValueError):
             raise HTTPException(404, "not_found")
 
+    @app.post("/api/sessions/{sid}/open")
+    def open_session(sid: str):
+        return ctl.open_session_folder(sid)
+
     @app.put("/api/sessions/{sid}/verdict")
     async def verdict(sid: str, request: Request):
         data = await body(request)
