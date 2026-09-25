@@ -46,7 +46,8 @@ DEFAULTS = {
     "keyence": {"mode": "off", "host": "192.168.1.40", "port": 8500, "delimiter": "\\r",
                 "trigger_interval_s": 5.0, "ftp_port": 2121, "ftp_user": "ftpuser",
                 "ftp_pass": "ftppass", "ftp_wait_s": 2.0, "stale_after_s": 0,
-                "ftp_passive_ports": [2130, 2140]},
+                "ftp_passive_ports": [2130, 2140], "image_width": 1520, "image_height": 960,
+                "preview_interval_s": 3.0},
     "required_metadata": ["operator", "mould_id", "part_number", "material"],
     "min_free_disk_gb": 20.0,
     "abort_free_disk_gb": 2.0,
@@ -117,20 +118,24 @@ def load(path=None):
     return cfg
 
 
-def save_cameras(cfg, cameras):
-    """Write the cameras section back to config.local.json, keeping a backup."""
+def save_section(cfg, key, value):
+    """Write one top-level section back to config.local.json, keeping a backup."""
     path = cfg["_path"]
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
     backup = "%s.%s.bak" % (path, time.strftime("%Y%m%d_%H%M%S"))
     shutil.copyfile(path, backup)
-    raw["cameras"] = cameras
+    raw[key] = value
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(raw, f, indent=2)
     os.replace(tmp, path)
-    cfg["cameras"] = cameras
+    cfg[key] = value
     return backup
+
+
+def save_cameras(cfg, cameras):
+    return save_section(cfg, "cameras", cameras)
 
 
 def stream_names(cfg):
@@ -145,9 +150,12 @@ def public(cfg):
         "app_name": APP_NAME,
         "version": APP_VERSION,
         "cameras": [{"id": c["id"], "ip": c["ip"]} for c in cfg["cameras"]],
-        "streams": [{"name": n, "camera": c["id"], "kind": k,
-                     "width": cfg["streams"][k]["width"], "height": cfg["streams"][k]["height"]}
-                    for n, c, k in stream_names(cfg)],
+        "streams": ([{"name": n, "camera": c["id"], "kind": k,
+                      "width": cfg["streams"][k]["width"], "height": cfg["streams"][k]["height"]}
+                     for n, c, k in stream_names(cfg)]
+                    + ([{"name": "keyence", "camera": "keyence", "kind": "keyence",
+                         "width": cfg["keyence"]["image_width"], "height": cfg["keyence"]["image_height"]}]
+                       if cfg["keyence"]["mode"] == "iv3" else [])),
         "nominal_fps": cfg["nominal_fps"],
         "max_record_seconds": cfg["max_record_seconds"],
         "radiometric": {"enabled": cfg["radiometric"]["enabled"], "rate_hz": cfg["radiometric"]["rate_hz"],
@@ -160,7 +168,8 @@ def public(cfg):
         "required_metadata": cfg["required_metadata"],
         "keyence": {"mode": cfg["keyence"]["mode"], "host": cfg["keyence"]["host"],
                     "trigger_interval_s": cfg["keyence"]["trigger_interval_s"],
-                    "ftp_port": cfg["keyence"]["ftp_port"]},
+                    "ftp_port": cfg["keyence"]["ftp_port"],
+                    "preview_interval_s": cfg["keyence"]["preview_interval_s"]},
         "keyence_mode": cfg["keyence"]["mode"],
         "ffc_available": bool(cfg.get("ffc_path")),
         "simulate": cfg["simulate"],

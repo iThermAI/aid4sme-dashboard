@@ -45,6 +45,7 @@ const en = {
     clockOk: 'Clock in step', clockOff: 'Clock {v} s off',
     settingsOk: 'Settings as recommended', settingsWarn: 'Check {n} settings', settingsChanged: '{n} changed since profile',
     keyenceNone: 'Not recording', keyenceIv3: 'IV3, image every {v} s', keyenceWaiting: 'Waiting for the first image',
+    keyenceHint: 'The IV3 photographs the machine screen. Regions mark the fields to be read later; they change nothing in the recording.',
     start: 'Start recording', startingBtn: 'Starting…'
   },
   view: {
@@ -127,6 +128,12 @@ const en = {
     distanceHint: 'Set this to the real distance between camera and part, in the camera’s web page. It changes every temperature value recorded.',
     fieldSource: 'read from {s}', unknownField: 'Not identified yet for this firmware',
     ffc: 'Calibrate shutter now', ffcDone: 'Shutter calibration triggered',
+    keyenceTitle: 'Keyence IV3', keyenceTrigger: 'Take a picture now', keyenceTriggered: 'Picture received, trigger no. {v}',
+    keyenceNoPicture: 'No picture arrived. Check the camera\u2019s FTP output settings and the firewall.',
+    keyenceLast: 'Last picture', keyenceAge: '{v} s ago', keyenceImages: 'Pictures this session',
+    keyenceInterval: 'Picture every', keyenceFtpPort: 'FTP port on this PC', keyencePort: 'Trigger port',
+    keyenceResult: 'Latest result from the camera', keyenceMode: 'Recording mode',
+    keyenceModeOff: 'Off', keyenceModeIv3: 'IV3 images',
     frames: '{v} fps', gopFrames: '{v} frames'
   },
   check: {
@@ -246,6 +253,7 @@ const sl = {
     clockOk: 'Ura usklajena', clockOff: 'Ura odstopa {v} s',
     settingsOk: 'Nastavitve kot priporočeno', settingsWarn: 'Preverite nastavitve ({n})', settingsChanged: 'Spremenjeno glede na profil: {n}',
     keyenceNone: 'Se ne snema', keyenceIv3: 'IV3, slika vsakih {v} s', keyenceWaiting: 'Čakanje na prvo sliko',
+    keyenceHint: 'IV3 fotografira zaslon stroja. Območja označujejo polja za kasnejše branje; na posnetek ne vplivajo.',
     start: 'Začni snemanje', startingBtn: 'Zagon …'
   },
   view: {
@@ -328,6 +336,12 @@ const sl = {
     distanceHint: 'Nastavite na dejansko razdaljo med kamero in izdelkom, na spletni strani kamere. Vpliva na vse posnete temperature.',
     fieldSource: 'prebrano iz {s}', unknownField: 'Za to programsko opremo še ni določeno',
     ffc: 'Kalibriraj zaklop zdaj', ffcDone: 'Kalibracija zaklopa sprožena',
+    keyenceTitle: 'Keyence IV3', keyenceTrigger: 'Posnemi sliko zdaj', keyenceTriggered: 'Slika prejeta, št. prožitve {v}',
+    keyenceNoPicture: 'Slika ni prispela. Preverite nastavitve FTP na kameri in požarni zid.',
+    keyenceLast: 'Zadnja slika', keyenceAge: 'pred {v} s', keyenceImages: 'Slik v tej seji',
+    keyenceInterval: 'Slika vsakih', keyenceFtpPort: 'Vrata FTP na tem računalniku', keyencePort: 'Vrata za proženje',
+    keyenceResult: 'Zadnji rezultat kamere', keyenceMode: 'Način snemanja',
+    keyenceModeOff: 'Izklopljeno', keyenceModeIv3: 'Slike IV3',
     frames: '{v} sl./s', gopFrames: '{v} sličic'
   },
   check: {

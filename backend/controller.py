@@ -21,6 +21,7 @@ from . import isapi
 from .clock import CLOCK, iso
 from .recorder import Recording, write_json
 from .simcam import SimCamera
+from .keyence import make_receiver
 from .stores import JsonStore
 from .video import ffmpeg_version
 
@@ -65,6 +66,8 @@ class Controller(object):
         self.devices = {}
         self.camera_checks = {}
         self.keyence_state = None
+        self.keyence_preview = None          # live view receiver, only between runs
+        self.keyence_preview_wanted = 0.0
         self.recording = None
         self.prefs = self._load_prefs()
         self.draft = self._load_draft()
@@ -145,6 +148,9 @@ class Controller(object):
             for cam in list(self.cameras.values()):
                 self.devices[cam.id] = self._check_clock(cam)
             self.keyence_state = self._check_keyence()
+            if self.keyence_preview and (self.state in ACTIVE or
+                                         time.time() - self.keyence_preview_wanted > 10):
+                self._stop_keyence_preview()
             if not active:
                 # Keep the session clock on the wall clock; never while recording.
                 off = self.clock.wall_offset()
@@ -189,6 +195,99 @@ class Controller(object):
         except OSError as e:
             state.update(reachable=False, error=type(e).__name__)
         return state
+
+    def _keyence_preview_dir(self):
+        return os.path.join(self.draft_dir, "keyence_preview")
+
+    def _start_keyence_preview(self):
+        kc = dict(self.cfg["keyence"])
+        kc["trigger_interval_s"] = kc.get("preview_interval_s", 3.0)
+        folder = self._keyence_preview_dir()
+        if os.path.isdir(folder):
+            shutil.rmtree(folder, ignore_errors=True)
+        rx = make_receiver(kc, folder, self.clock, lambda *a, **k: None)
+        rx.start()
+        self.keyence_preview = rx
+        log.info("Keyence live view started")
+
+    def _stop_keyence_preview(self):
+        rx, self.keyence_preview = self.keyence_preview, None
+        if rx:
+            rx.stop()
+            try:
+                rx.finish(2)
+            except Exception:                      # noqa - best effort
+                pass
+            log.info("Keyence live view stopped")
+
+    def keyence_preview_image(self):
+        """Latest IV3 picture, triggering the camera in the background while watched."""
+        if self.cfg["keyence"]["mode"] != "iv3":
+            raise KeyError("keyence")
+        if self.state in ACTIVE:
+            raise StateError("previews_paused")
+        self.keyence_preview_wanted = time.time()
+        if self.keyence_preview is None:
+            self._start_keyence_preview()
+        latest = self.keyence_preview.latest_image()
+        if latest is None:
+            raise IOError("waiting for the first image from the IV3")
+        body, ctype, _ = latest
+        return body, ctype
+
+    def keyence_status(self):
+        st = dict(self.keyence_state or {"mode": self.cfg["keyence"]["mode"]})
+        rx = self.keyence_preview if self.keyence_preview else (
+            self.recording.keyence if self.recording and self.state in ACTIVE else None)
+        if rx is not None and getattr(rx, "last_image_t", None):
+            st["last_image_age_s"] = round(self.clock.now() - rx.last_image_t, 1)
+            st["trigger_no"] = rx.last_trigger_no
+            st["result"] = {k: v for k, v in (rx.last_result or {}).items() if isinstance(v, str)}
+            st["images"] = rx.images
+        st["ftp_folder"] = self.cfg["data_dir"]
+        st["image_size"] = [self.cfg["keyence"]["image_width"], self.cfg["keyence"]["image_height"]]
+        return st
+
+    def keyence_trigger(self):
+        """One picture on demand, from the Cameras page."""
+        if self.state in ACTIVE:
+            raise StateError("busy_recording")
+        if self.cfg["keyence"]["mode"] != "iv3":
+            raise ValueError("keyence_not_configured")
+        self.keyence_preview_wanted = time.time()
+        if self.keyence_preview is None:
+            self._start_keyence_preview()
+        rx = self.keyence_preview
+        before = rx.images
+        deadline = time.time() + 8
+        while time.time() < deadline and rx.images == before:
+            time.sleep(0.2)
+        return {"ok": rx.images > before, "images": rx.images, "trigger_no": rx.last_trigger_no,
+                "connected": rx.connected, "failed": rx.failed}
+
+    def update_keyence(self, data):
+        with self.lock:
+            self._require_idle()
+            kc = dict(self.cfg["keyence"])
+            if data.get("mode") in ("off", "iv3", "tcp"):
+                kc["mode"] = data["mode"]
+            if data.get("host"):
+                if not HOST_RE.match(str(data["host"]).strip()):
+                    raise ValueError("invalid_address")
+                kc["host"] = str(data["host"]).strip()
+            for key, lo, hi in (("port", 1, 65535), ("ftp_port", 1, 65535)):
+                if data.get(key):
+                    kc[key] = max(lo, min(int(data[key]), hi))
+            for key, lo, hi in (("trigger_interval_s", 0.5, 300.0), ("preview_interval_s", 1.0, 60.0)):
+                if data.get(key):
+                    kc[key] = max(lo, min(float(data[key]), hi))
+            if not self.cfg["simulate"]:
+                config_mod.save_section(self.cfg, "keyence", kc)
+            else:
+                self.cfg["keyence"] = kc
+            self._stop_keyence_preview()
+            self.keyence_state = self._check_keyence()
+            return self.keyence_status()
 
     def reference_profile(self):
         slug = self.prefs.get("reference_profile")
@@ -471,7 +570,10 @@ class Controller(object):
         return self.cfg["streams"][kind]["width"], self.cfg["streams"][kind]["height"]
 
     def _region_entry(self, cam_id, kind, r):
-        w, h = self.stream_frame(cam_id, kind)
+        if kind == "keyence":
+            w, h = self.cfg["keyence"]["image_width"], self.cfg["keyence"]["image_height"]
+        else:
+            w, h = self.stream_frame(cam_id, kind)
         x0 = min(max(float(r["x"]), 0.0), 1.0)
         y0 = min(max(float(r["y"]), 0.0), 1.0)
         x1 = min(max(x0 + float(r["w"]), 0.0), 1.0)
@@ -492,6 +594,8 @@ class Controller(object):
         with self.lock:
             self._require_idle()
             streams = {n: (c["id"], k) for n, c, k in config_mod.stream_names(self.cfg)}
+            if self.cfg["keyence"]["mode"] == "iv3":
+                streams["keyence"] = ("keyence", "keyence")      # regions mark the fields to read later
             if stream not in streams:
                 raise KeyError(stream)
             entries = [self._region_entry(streams[stream][0], streams[stream][1], r) for r in (regions or [])[:12]
@@ -593,6 +697,8 @@ class Controller(object):
     def preview(self, stream):
         if self.state in ACTIVE:
             raise StateError("previews_paused")
+        if stream == "keyence":
+            return self.keyence_preview_image()
         cam_cfg, kind = self._stream(stream)
         with self._locks["preview:" + stream]:
             cached = self._preview_cache.get(stream)
@@ -780,6 +886,7 @@ class Controller(object):
 
     def shutdown(self):
         self._monitor_stop.set()
+        self._stop_keyence_preview()
         rec = self.recording
         if rec and rec.state == "recording":
             rec.stop("server_shutdown")
@@ -812,7 +919,7 @@ class Controller(object):
             "blockers": blockers, "warnings": warnings,
             "next_run": self.next_run_number(self.draft["metadata"].get("mould_id")),
             "reference_profile": ref["name"] if ref else None,
-            "keyence": self.keyence_state,
+            "keyence": self.keyence_status(),
             "prefs": self.prefs,
             "recording": rec.status() if rec else None,
             "result": rec.result if rec and rec.state == "finished" else None,

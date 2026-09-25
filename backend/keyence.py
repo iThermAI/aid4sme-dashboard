@@ -168,6 +168,8 @@ class Iv3Receiver(object):
         self.failed = 0
         self.connected = False
         self.last_image_t = None
+        self.last_image_path = None
+        self.last_result = {}
         self.last_trigger_no = None
         self.health = "starting"
         self.t_start = None
@@ -283,9 +285,11 @@ class Iv3Receiver(object):
                 else info.get("Time and Date", "")
             row["total_status"] = info.get("Total Status", "")
             self.last_trigger_no = row["trigger_no"] or self.last_trigger_no
+            self.last_result = info
         else:
             self.images += 1
             self.last_image_t = t
+            self.last_image_path = path
         self._row(row)
 
     def _row(self, row):
@@ -293,6 +297,14 @@ class Iv3Receiver(object):
             self.rows.append(row)
             self.writer.writerow(row)
             self.index.flush()
+
+    def latest_image(self):
+        """Newest received picture, for the live view."""
+        path = self.last_image_path
+        if not path or not os.path.isfile(path):
+            return None
+        with open(path, "rb") as f:
+            return f.read(), ("image/bmp" if path.lower().endswith(".bmp") else "image/jpeg"), self.last_image_t
 
     # -- control ------------------------------------------------------------- #
     def stop(self):

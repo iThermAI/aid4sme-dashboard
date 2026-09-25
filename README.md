@@ -281,6 +281,14 @@ its result file. Nothing is recorded between runs.
 PC's address and `ftp_port`, with the same user and password. **On the capture PC**, allow
 incoming TCP on `ftp_port` and on the passive range in the Windows firewall.
 
+In the **Run** tab the IV3 appears as a fifth live view, below the four camera views, so the
+operator can check framing and focus and zoom in on the screen before recording. Regions drawn
+on it mark the fields to be read later; like all regions they change nothing in the recording.
+The **Cameras** page has an IV3 card with the latest picture, the camera's own result values
+and a "Take a picture now" button, and the **Settings** page holds its address, ports and
+interval. The camera is only triggered while somebody is watching it or while a run is
+recording.
+
 Files land in `raw/keyence/` exactly as the camera sent them, and `raw/keyence/index.csv`
 records, for every image: the time the trigger was sent, the time the camera answered, the
 time the file finished transferring, the file name and size, and the camera's own trigger

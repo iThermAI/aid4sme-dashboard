@@ -51,6 +51,25 @@ async function saveConnections () {
   } catch (e) { error.value = errorText(e) } finally { busy.value = false }
 }
 
+const keyence = reactive({ mode: 'off', host: '', port: 8500, trigger_interval_s: 5, ftp_port: 2121 })
+const kMsg = ref('')
+async function loadKeyence () {
+  try {
+    const k = await api.keyence()
+    Object.keys(keyence).forEach((key) => { if (k[key] !== undefined) keyence[key] = k[key] })
+  } catch (e) { /* section stays at defaults */ }
+}
+onMounted(loadKeyence)
+async function saveKeyence () {
+  kMsg.value = ''
+  try {
+    await api.saveKeyence({ ...keyence })
+    await loadKeyence()
+    kMsg.value = t('settings.connectionsSaved')
+    error.value = ''
+  } catch (e) { error.value = errorText(e) }
+}
+
 const prefs = computed(() => (store.status && store.status.prefs) || {})
 const INC = ['mould_id', 'part_number', 'shot_counter_start']
 async function toggleInc (f) {
@@ -90,6 +109,31 @@ const recording = computed(() => store.status && ['starting', 'recording', 'stop
         <button class="btn primary" :disabled="busy || recording" @click="saveConnections">{{ t('settings.saveConnections') }}</button>
         <span v-if="msg" class="small oktext">{{ msg }}</span>
         <span v-if="error" class="small err">{{ error }}</span>
+      </div>
+    </section>
+
+    <section class="panel panel-pad">
+      <div class="panel-head"><h2>{{ t('cameras.keyenceTitle') }}</h2></div>
+      <p class="small muted lead">{{ t('setup.keyenceHint') }}</p>
+      <div class="krow">
+        <label class="field"><span class="label">{{ t('cameras.keyenceMode') }}</span>
+          <select v-model="keyence.mode">
+            <option value="off">{{ t('cameras.keyenceModeOff') }}</option>
+            <option value="iv3">{{ t('cameras.keyenceModeIv3') }}</option>
+          </select>
+        </label>
+        <label class="field"><span class="label">{{ t('settings.address') }}</span>
+          <input v-model="keyence.host" type="text" spellcheck="false" /></label>
+        <label class="field"><span class="label">{{ t('cameras.keyencePort') }}</span>
+          <input v-model.number="keyence.port" type="number" min="1" max="65535" /></label>
+        <label class="field"><span class="label">{{ t('cameras.keyenceInterval') }} (s)</span>
+          <input v-model.number="keyence.trigger_interval_s" type="number" min="0.5" max="300" step="0.5" /></label>
+        <label class="field"><span class="label">{{ t('cameras.keyenceFtpPort') }}</span>
+          <input v-model.number="keyence.ftp_port" type="number" min="1" max="65535" /></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" :disabled="recording" @click="saveKeyence">{{ t('common.save') }}</button>
+        <span v-if="kMsg" class="small oktext">{{ kMsg }}</span>
       </div>
     </section>
 
@@ -150,6 +194,7 @@ h1 { font-size: var(--fs-xl); }
 .testcell { display: flex; align-items: center; gap: 10px; min-width: 300px; }
 .actions { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+.krow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .check { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .check input { width: 16px; height: 16px; }
 .gap { margin-top: 16px; }

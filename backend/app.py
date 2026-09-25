@@ -113,6 +113,18 @@ def create_app(cfg):
         return StreamingResponse(r.iter_content(65536), media_type="application/octet-stream",
                                  headers={"Content-Disposition": 'attachment; filename="%s"' % name})
 
+    @app.get("/api/keyence")
+    def keyence_status():
+        return ctl.keyence_status()
+
+    @app.post("/api/keyence/trigger")
+    def keyence_trigger():
+        return ctl.keyence_trigger()
+
+    @app.put("/api/settings/keyence")
+    async def put_keyence(request: Request):
+        return ctl.update_keyence(await body(request))
+
     @app.get("/api/thermal/{cid}")
     def thermal(cid: str):
         try:

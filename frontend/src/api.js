@@ -38,6 +38,9 @@ export const api = {
   deletePart: (slug) => request('DELETE', `/api/parts/${enc(slug)}`),
 
   camera: (id) => request('GET', `/api/cameras/${enc(id)}`),
+  keyence: () => request('GET', '/api/keyence'),
+  keyenceTrigger: () => request('POST', '/api/keyence/trigger'),
+  saveKeyence: (data) => request('PUT', '/api/settings/keyence', data),
   checkCameras: () => request('POST', '/api/cameras/check'),
   renameChannel: (id, kind, name) => request('PUT', `/api/cameras/${enc(id)}/channel-name`, { kind, name }),
   ffc: (id) => request('POST', `/api/cameras/${enc(id)}/ffc`),

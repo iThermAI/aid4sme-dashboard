@@ -4,6 +4,7 @@ import { store, onReturn } from '../../store.js'
 import { api } from '../../api.js'
 import { t, errorText } from '../../i18n.js'
 import CameraCard from './CameraCard.vue'
+import KeyencePanel from './KeyencePanel.vue'
 import ProfilesPanel from './ProfilesPanel.vue'
 
 const info = reactive({})
@@ -40,6 +41,7 @@ onBeforeUnmount(() => { if (off) off() })
       <button class="btn" @click="readAll">{{ t('cameras.refreshAll') }}</button>
     </div>
     <ProfilesPanel @changed="readAll" />
+    <KeyencePanel v-if="store.config.keyence && store.config.keyence.mode !== 'off'" />
     <div class="grid">
       <CameraCard v-for="c in store.config.cameras" :id="c.id" :key="c.id" :info="info[c.id] || null"
                   :loading="!!loading[c.id]" :error="errors[c.id] || ''" @refresh="read(c.id)" />

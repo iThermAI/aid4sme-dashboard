@@ -19,6 +19,8 @@ const rows = computed(() => {
   streams.value.forEach((s) => { (byCam[s.camera] = byCam[s.camera] || []).push(s) })
   return Object.values(byCam)
 })
+// The IV3 photographs the machine's screen; its regions mark the fields to read later.
+const keyence = computed(() => streams.value.find((s) => s.kind === 'keyence') || null)
 const blockers = computed(() => (store.status ? store.status.blockers : []))
 const warnings = computed(() => (store.status ? store.status.warnings : []))
 const canStart = computed(() => store.status && store.status.state !== 'starting' && !blockers.value.length && !starting.value)
@@ -70,6 +72,12 @@ async function start () {
                     :interval="store.config.preview_interval_ms" :matrix-interval="store.config.thermal_matrix_ms"
                     @regions="(r) => saveRegions(s.name, r)" @expand="expanded = s.name" />
       </div>
+      <div v-if="keyence" class="row keyence">
+        <CameraView :stream="keyence" :regions="store.draft.regions.keyence || []"
+                    :interval="store.config.preview_interval_ms"
+                    @regions="(r) => saveRegions('keyence', r)" @expand="expanded = 'keyence'" />
+        <p class="small muted khint">{{ t('setup.keyenceHint') }}</p>
+      </div>
       </div>
     </section>
 
@@ -111,6 +119,9 @@ async function start () {
 .previews .panel-head h2 { flex: 0 0 auto; }
 .hint { flex: 1 1 380px; max-width: 80ch; }
 .cam-grid { margin: 0 auto; min-width: 560px; }
+.row.keyence { align-items: flex-start; }
+.row.keyence > :deep(.cv) { flex-grow: 0; flex-basis: 46%; }
+.khint { flex: 1 1 40%; padding-top: 34px; }
 .row { display: flex; gap: var(--gap); }
 .row + .row { margin-top: 6px; }
 .rail {
