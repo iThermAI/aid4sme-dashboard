@@ -196,27 +196,67 @@ def cross_correlate(ref, sig, dt_s):
     return -shift * dt_s, peak
 
 
-def align_streams(signals, reference):
-    """signals: {stream: (host_times, values)}. Returns offsets in ms vs reference."""
+def align_streams(signals, reference, arrival):
+    """Measure what can honestly be measured, and state the rest as an estimate.
+
+    The two cameras at Elvez look at different things: one at the machine, one at the
+    produced parts. Cross-correlating them would compare two different scenes that merely
+    share the machine's rhythm, which can produce a confident but meaningless number. So
+    correlation is used only between the optical and thermal channels of the SAME camera,
+    which share a housing and a field of view. Between cameras the offset comes from the
+    measured arrival times, with its own, larger uncertainty.
+    """
     have = {k: v for k, v in signals.items() if v and len(v[0]) > 10}
-    if reference not in have:
-        return {}, "reference stream has no usable motion signal"
     dt = GRID_MS / 1000.0
-    t0 = max(v[0][0] for v in have.values())
-    t1 = min(v[0][-1] for v in have.values())
-    if t1 - t0 < 5:
-        return {}, "streams overlap for less than 5 s"
-    grid = np.arange(t0, t1, dt)
-    grids = {k: resample(v[0], v[1], grid) for k, v in have.items()}
-    ref = grids[reference]
     out = {}
-    for name, sig in grids.items():
+    notes = []
+
+    def camera_of(name):
+        return name.split("_")[0]
+
+    def measure(a, b):
+        t0 = max(have[a][0][0], have[b][0][0])
+        t1 = min(have[a][0][-1], have[b][0][-1])
+        if t1 - t0 < 5:
+            return None
+        grid = np.arange(t0, t1, dt)
+        off, q = cross_correlate(resample(*have[a], grid=grid), resample(*have[b], grid=grid), dt)
+        return round(off * 1000, 1), round(q, 3)
+
+    ref_cam = camera_of(reference)
+    for name in sorted(set(list(have) + list(arrival))):
+        cam = camera_of(name)
+        est = arrival.get(name)
         if name == reference:
-            out[name] = {"offset_ms": 0.0, "quality": 1.0}
+            out[name] = {"offset_ms": 0.0, "method": "reference", "trust": "reference"}
             continue
-        off, q = cross_correlate(ref, sig, dt)
-        out[name] = {"offset_ms": round(off * 1000, 1), "quality": round(q, 3)}
-    return out, None
+        same_camera_ref = "%s_optical" % cam
+        if name in have and cam == ref_cam and same_camera_ref in have and name != same_camera_ref:
+            # same camera as the reference: a real measurement against it
+            m = measure(reference, name)
+            if m:
+                out[name] = {"offset_ms": m[0], "correlation": m[1], "method": "scene cross-correlation",
+                             "arrival_estimate_ms": est,
+                             "trust": "low" if m[1] < 0.3 else "medium" if m[1] < 0.6 else "high"}
+                continue
+        if name in have and same_camera_ref in have and name != same_camera_ref:
+            # other camera: measure only against that camera's own optical channel,
+            # then carry it across on the arrival estimate of that channel
+            m = measure(same_camera_ref, name)
+            base = arrival.get(same_camera_ref)
+            if m and base is not None and est is not None:
+                out[name] = {"offset_ms": round(base + m[0], 1), "correlation": m[1],
+                             "method": "cross-correlation within %s, carried across on arrival times" % cam,
+                             "arrival_estimate_ms": est,
+                             "trust": "low"}
+                continue
+        out[name] = {"offset_ms": est, "method": "arrival estimate (no shared view to measure against)",
+                     "arrival_estimate_ms": est, "trust": "low"}
+    if len({camera_of(n) for n in have}) > 1:
+        notes.append("The cameras do not share a field of view, so offsets between them are "
+                     "arrival-time estimates (roughly +/- 100 ms), not measurements. Only the "
+                     "optical and thermal channels of one camera are measured against each other.")
+    return out, "; ".join(notes) or None
 
 
 # --------------------------------------------------------------------------- #
@@ -407,23 +447,22 @@ def build(session, args):
 
     # ---- alignment --------------------------------------------------------- #
     reference = args.reference if args.reference in signals else (sorted(signals)[0] if signals else None)
-    offsets, problem = ({}, "no motion signals") if not reference else align_streams(signals, reference)
     arrival = ver.get("start_offsets_ms_vs_cam1_optical") or {}
+    offsets, problem = ({}, "no motion signals") if not reference else align_streams(signals, reference, arrival)
     sync = {
         "reference": reference,
-        "method": "scene cross-correlation of the per-frame motion signal",
         "grid_ms": GRID_MS,
-        "note": ("Offset is how much later a stream's content is than the reference. "
-                 "Subtract it from that stream's host times to put all streams on one timeline. "
-                 "Unlike the arrival estimate, this includes each camera's own delay."),
+        "note": ("Offset is how much later a stream's content is than the reference. Subtract it "
+                 "from that stream's host times to put the streams on one timeline. Each stream "
+                 "says how its offset was obtained: a measurement by cross-correlation, or an "
+                 "estimate from when the data reached the capture PC."),
         "streams": {}, "problem": problem}
     for name, r in sorted(offsets.items()):
         a = arrival.get(name)
-        sync["streams"][name] = {
-            "offset_ms": r["offset_ms"], "correlation": r["quality"],
-            "arrival_estimate_ms": a,
-            "difference_vs_arrival_ms": None if a is None else round(r["offset_ms"] - a, 1),
-            "trust": "low" if r["quality"] < 0.3 else "medium" if r["quality"] < 0.6 else "high"}
+        entry = dict(r)
+        if r.get("offset_ms") is not None and a is not None and r.get("correlation") is not None:
+            entry["difference_vs_arrival_ms"] = round(r["offset_ms"] - a, 1)
+        sync["streams"][name] = entry
     if report.get("keyence"):
         sync["streams"]["keyence"] = {
             "offset_ms": None, "method": "trigger midpoint, see keyence.csv",
@@ -474,9 +513,11 @@ def build(session, args):
             unc = r.get("median_uncertainty_ms")
             print("     %-22s %s%s" % (name, r.get("method", "arrival midpoint"),
                                        "" if unc is None else ", +/- %.0f ms" % unc))
+        elif r.get("correlation") is not None:
+            print("     %-22s %+8.1f ms  correlation %.2f (%s)  %s"
+                  % (name, r["offset_ms"], r["correlation"], r["trust"], r["method"]))
         else:
-            print("     %-22s %+8.1f ms  correlation %.2f (%s)   arrival estimate %s ms"
-                  % (name, r["offset_ms"], r["correlation"], r["trust"], r["arrival_estimate_ms"]))
+            print("     %-22s %+8.1f ms  (%s)" % (name, r["offset_ms"], r["method"]))
     if problem:
         print("  alignment not measured: %s" % problem)
     print("  -> %s" % out)

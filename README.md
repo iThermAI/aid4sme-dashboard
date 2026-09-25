@@ -340,16 +340,26 @@ python tools\build_dataset.py D:\aid4sme_data\sessions --all
 | `telemetry.jsonl` | Events, operator notes and matrices in one time-ordered file |
 | `dataset.json` | What was produced |
 
-**How alignment works.** Both cameras watch the same machine, so mould open, ejection and
-close appear in all four streams. The tool computes each stream's frame-to-frame motion,
-cross-correlates them, and reports the offset that lines them up. Because the measurement
-comes from the pictures themselves, it includes the delay inside each camera, which the
-arrival-time estimate in `verification.json` cannot see. `sync.json` shows both, so they can
-be compared.
+**How alignment works.** The optical and thermal channels of one camera share a housing and
+a field of view, so their frame-to-frame motion signals can be cross-correlated to measure the
+offset between them. That measurement comes from the pictures themselves, so it includes the
+camera's own encoding delay, which arrival times cannot see.
+
+**Between cameras it is an estimate, not a measurement.** Where the two cameras look at
+different things — at Elvez one watches the machine and one the finished parts — there is no
+shared event to correlate. Two views of the same production rhythm can correlate strongly and
+still be meaningless, so the tool does not try: offsets between cameras come from when the
+data reached the capture PC, roughly ±100 ms. Every stream in `sync.json` says which method
+produced its number, and `trust` reflects it.
+
+Closing that gap needs something both cameras can see at one instant: a light flash in the
+cell at the start of a run, a status lamp visible to both, or a hardware trigger from the
+machine. Without one, ±100 ms between cameras is the honest figure to quote.
 
 `offset_ms` is how much later a stream's content is than the reference stream; subtract it
-from that stream's host times to put everything on one timeline. `correlation` says how much
-to trust it: above 0.6 is good, below 0.3 means the run had too little shared movement.
+from that stream's host times to put the streams on one timeline. Where `correlation` is
+present it says how much to trust the measurement: above 0.6 is good, below 0.3 means the run
+had too little movement in view.
 
 Useful options: `--skip-motion` skips alignment and is much faster, `--keep-joined` keeps the
 joined video files (doubling disk use; the raw segments are always kept), and `--all`
