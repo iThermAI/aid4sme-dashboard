@@ -189,12 +189,33 @@ class Controller(object):
                  "trigger_interval_s": kc["trigger_interval_s"], "ftp_port": kc["ftp_port"]}
         if self.state in ACTIVE:
             return dict(self.keyence_state or state, recording=True)
+        if not kc.get("trigger", True):
+            state["reachable"] = None      # the camera pushes by itself; nothing to connect to
+            return state
+        # The IV3 accepts one control connection at a time. While the service needs that
+        # connection - recording, or the live view is open - a separate probe would either be
+        # refused, and look like a fault, or steal the slot from the service. So the service
+        # is asked instead, and only an idle camera is probed.
+        svc = self.keyence_service
+        if svc is not None and svc.wants_control():
+            if svc.connected:
+                state.update(reachable=True, source="connected for triggering")
+            elif svc.last_image_t and self.clock.now() - svc.last_image_t < 30:
+                state.update(reachable=True, source="picture received recently")
+            elif svc.last_error:
+                state.update(reachable=False, error=svc.last_error, source="trigger connection")
+            else:
+                state.update(reachable=None, source="connecting")
+            return state
+        if svc is not None and svc.last_image_t and self.clock.now() - svc.last_image_t < 30:
+            state.update(reachable=True, source="picture received recently")
+            return state
         try:
-            s = socket.create_connection((kc["host"], int(kc["port"])), 1.5)
-            s.close()
-            state["reachable"] = True
+            probe = socket.create_connection((kc["host"], int(kc["port"])), 1.5)
+            probe.close()
+            state.update(reachable=True, source="probe")
         except OSError as e:
-            state.update(reachable=False, error=type(e).__name__)
+            state.update(reachable=False, error=type(e).__name__, source="probe")
         return state
 
     def _keyence_scratch_dir(self):
