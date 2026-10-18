@@ -6,7 +6,7 @@ Aid4SME Dashboard records, in one run and without re-encoding:
 
 - two optical video streams and two thermal video streams from HIKMICRO / Hikvision bi-spectrum cameras,
 - the radiometric temperature matrix of each thermal sensor (°C per pixel, about once per second),
-- process parameters from a Keyence IV3 OCR camera reading the machine's screen (optional),
+- optionally, pictures of the machine's screen from a Keyence IV3 camera (process values themselves come from the machine's own cycle export),
 - the operator's run details, regions of interest, notes and a 3D model of the part.
 
 Everything is started and stopped from a local web dashboard, in English or Slovenian. Each run becomes one self-describing folder that a training pipeline can use directly.
@@ -314,10 +314,10 @@ records, for every image: the time the trigger was sent, the time the camera ans
 time the file finished transferring, the file name and size, and the camera's own trigger
 number, timestamp and result status.
 
-**OCR is a later step and needs no re-recording.** The dataset builder writes
-`derived/keyence.csv`, one row per trigger, with the image path, the host time of the
-photograph, its uncertainty and an empty `ocr_text` column. An OCR script fills that column
-by reading the images the file points at, and can be re-run whenever it improves.
+**OCR is not needed.** The MC6 cycle export (see *Building the dataset*) contains every value
+shown on the screen, exactly, plus about 80 more per shot. The IV3 pictures are optional: they
+are listed per run in `derived/keyence.csv` and per cycle in `dataset/run_cycles.csv`, and are
+useful for spot checks and as a fallback for reading the machine clock.
 
 The photograph's time is taken as the midpoint between the trigger leaving and the camera
 answering, so the FTP transfer afterwards doesn't affect it. Expect a few milliseconds of
@@ -325,51 +325,57 @@ uncertainty, which is far better than the temperature data.
 
 ---
 
-## Building the dataset from a run
+## Building the dataset
 
-`tools/build_dataset.py` turns raw sessions into aligned data. It runs on the capture PC
-(Python 3.8, numpy, the same FFmpeg), reads only `raw/`, and writes to `<session>/derived/`.
+`tools/build_dataset.py` turns the recorded runs into a training dataset. It needs only
+Python 3.8+, numpy and FFmpeg (the same ones used for recording), reads `raw/` without
+changing it, and can be re-run at any time: it only redoes what changed.
 
 ```bat
-python tools\build_dataset.py D:\aid4sme_data\sessions\20260918_134047_1834_run023
-python tools\build_dataset.py D:\aid4sme_data\sessions --all
+python tools\build_dataset.py D:\aid4sme_data                  update everything
+python tools\build_dataset.py D:\aid4sme_data --dry-run        show what would be rebuilt
+python tools\build_dataset.py D:\aid4sme_data --only run014    one run, then the tables
+python tools\build_dataset.py D:\aid4sme_data --no-video-crops skip the slow part
 ```
 
-| Output | Contents |
-|---|---|
-| `<stream>_frames.csv` | Every frame with its position in the file and its host time |
-| `<stream>_motion.csv` | Per-frame motion signal used for alignment |
-| `radiometric_<cam>.npy` | float32 array `[matrices, 192, 256]` in °C |
-| `radiometric_<cam>.csv` | Capture time and timing uncertainty of every matrix |
-| `keyence.csv` | One row per IV3 trigger: image path, host time, trigger number, empty `ocr_text` |
-| `sync.json` | Measured offset of each stream, with correlation quality |
-| `telemetry.jsonl` | Events, operator notes and matrices in one time-ordered file |
-| `dataset.json` | What was produced |
+**Inputs** in the data folder: the run folders, the MC6 cycle export(s) (`*.XML`, Excel 2003
+format, saved from the machine to USB; several files are merged, later ones win) and
+`dataset_config.json`, which the builder creates on first use.
 
-**How alignment works.** The optical and thermal channels of one camera share a housing and
-a field of view, so their frame-to-frame motion signals can be cross-correlated to measure the
-offset between them. That measurement comes from the pictures themselves, so it includes the
-camera's own encoding delay, which arrival times cannot see.
+**Per run** (`<run>/derived/`): region crops of all four videos (`crops/<stream>__<region>.mp4`,
+H.264, one frame per source frame), the radiometric matrices in full and per region
+(`.npy`, deg C), frame and matrix times, `keyence.csv`, `sync.json`, `telemetry.jsonl`.
 
-**Between cameras it is an estimate, not a measurement.** Where the two cameras look at
-different things — at Elvez one watches the machine and one the finished parts — there is no
-shared event to correlate. Two views of the same production rhythm can correlate strongly and
-still be meaningless, so the tool does not try: offsets between cameras come from when the
-data reached the capture PC, roughly ±100 ms. Every stream in `sync.json` says which method
-produced its number, and `trust` reflects it.
+**Across runs** (`dataset/`): `runs.csv` (one row per run, with labels and the machine values of
+its cycle), `cycles.csv` (every MC6 cycle with ~90 process values), `run_cycles.csv` (frame and
+matrix index ranges per run and cycle), `regions.csv`, `machine_columns.csv`, `dataset.json`.
 
-Closing that gap needs something both cameras can see at one instant: a light flash in the
-cell at the start of a run, a status lamp visible to both, or a hardware trigger from the
-machine. Without one, ±100 ms between cameras is the honest figure to quote.
+**Labels** come from what the operator typed: the regrind percentage, shot number and "out of
+material" are read from the notes and the verdict reason; runs without a note take the label
+of their batch (runs recorded back to back). Corrections go in `label_overrides` in
+`dataset_config.json`.
 
-`offset_ms` is how much later a stream's content is than the reference stream; subtract it
-from that stream's host times to put the streams on one timeline. Where `correlation` is
-present it says how much to trust the measurement: above 0.6 is good, below 0.3 means the run
-had too little movement in view.
+**Machine clock.** The MC6 clock is not synchronised with the PC (on 2026-10-07 it was 499.5 s
+behind). `dataset_config.json` holds one offset per recording day (`machine_clock_offsets`).
+The builder checks every day against the videos: on each normal shot the mould opens a fixed
+time before the MC6 starts the next cycle (3.56 s for mould 1834, `mould_open_lead_s`). A wrong
+offset produces a warning with the value the videos suggest. A day with no configured offset is
+estimated from the videos near the closest configured day's offset (within 20 s), or by a wide
+search that is accepted only when unambiguous; the result is reported in `dataset.json` and
+should then be written into the config. If the MC6 clock is corrected or synchronised (NTP),
+set that day's offset to 0, or to whatever small value the check reports.
 
-Useful options: `--skip-motion` skips alignment and is much faster, `--keep-joined` keeps the
-joined video files (doubling disk use; the raw segments are always kept), and `--all`
-processes every session in a folder.
+**What triggers a rebuild:** a new run folder; new or changed raw files (names and sizes; file
+dates are ignored, so copying data between PCs does not); changed regions or crop settings; a
+missing output file. Changing a verdict, note or label only refreshes the tables. A new MC6
+export or a change in `dataset_config.json` refreshes the tables. Runs still recording are
+skipped, and runs with missing files (for example an interrupted copy) are listed as incomplete
+and built automatically once the files are there. An interrupted build continues where it
+stopped. `--dry-run` shows what would be rebuilt.
+
+**OCR is not needed.** The MC6 export contains every value shown on the machine screen (checked
+against Keyence pictures at five points of the day) plus ~80 more. The Keyence pictures are
+still listed per cycle for spot checks.
 
 ---
 
