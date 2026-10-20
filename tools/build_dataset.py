@@ -59,7 +59,7 @@ try:
 except ImportError:
     sys.exit("This tool needs numpy:  pip install numpy")
 
-BUILDER_VERSION = "2.1.0"
+BUILDER_VERSION = "2.1.1"
 STATE_VERSION = "2"     # per-run state format; change only when every run must be rebuilt
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -944,6 +944,13 @@ KNOWN_COLUMNS = [
 ]
 
 
+# Values shown on the MC6 "actual values per cycle" screen that the Keyence IV3 photographs.
+# Only these can be read live (by OCR); everything else in the export is available offline only.
+HMI_SCREEN_KEYS = {"cycle_time_s", "plasticizing_time_s", "plasticizing_stroke_mm", "injection_time_s",
+                   "melt_cushion_mm", "switchover_melt_pressure_bar", "max_melt_pressure_bar",
+                   "switchover_position_mm", "oil_temp_z14_c"}
+
+
 def _slug(s):
     s = s.lower().replace("č", "c").replace("š", "s").replace("ž", "z").replace("°", "")
     s = s.replace("³", "3").replace("–", "-")
@@ -1555,10 +1562,12 @@ def build_tables(root, sessions, cfg, args):
         vals = [c.get(col["key"]) for c in machine["cycles"] if c.get(col["key"]) is not None]
         col_rows.append({"key": col["key"], "header": col["header"], "unit": col["unit"],
                          "english_key_is_translation": int(col["translated"]),
+                         "on_hmi_screen": int(col["key"] in HMI_SCREEN_KEYS),
                          "non_empty": len(vals), "constant": int(len(set(vals)) <= 1),
                          "min": min(vals) if vals else "", "max": max(vals) if vals else ""})
     write_csv(os.path.join(out_dir, "machine_columns.csv"),
-              ["key", "header", "unit", "english_key_is_translation", "non_empty", "constant", "min", "max"],
+              ["key", "header", "unit", "english_key_is_translation", "on_hmi_screen", "non_empty", "constant",
+               "min", "max"],
               col_rows)
     write_csv(os.path.join(out_dir, "machine_setpoints.csv"), ["source", "row"] + mcols, machine["setpoints"])
 
@@ -1597,9 +1606,19 @@ Settings (machine clock offset, label corrections, crop settings) are in
 | `cycles.csv` | machine cycle (MC6 export) | All 90 MC6 process values per shot, with its start on the PC clock and the runs that saw it. |
 | `run_cycles.csv` | run x cycle overlap | Frame indices (per stream), radiometric matrix indices and Keyence pictures that fall inside each cycle. |
 | `regions.csv` | operator region | Region boxes in video pixels, normalised and radiometric pixels, and the crop files. |
-| `machine_columns.csv` | MC6 column | Original Slovenian header, unit, value range, constant columns. |
+| `machine_columns.csv` | MC6 column | Original Slovenian header, unit, value range, constant columns, `on_hmi_screen`. |
 | `machine_setpoints.csv` | setpoint row | The export's set values ("Nastavljena vrednost"). |
 | `dataset.json` | - | Counts, inputs, clock offsets, warnings. |
+
+## Training vs. live use
+
+The MC6 export is saved to USB after the runs: it is available for training only. Live, the
+process values come from OCR of the Keyence IV3 pictures of the machine screen, which show only
+the columns marked `on_hmi_screen = 1` in `machine_columns.csv` (cycle time, plasticising time
+and stroke, injection time, cushion, switch-over and peak melt pressure, switch-over position,
+oil temperature). A model meant to run live may use only those as process inputs; the other MC6
+values can serve as training targets or for analysis. The IV3 pictures (`keyence.csv`, ranges in
+`run_cycles.csv`) paired with `cycles.csv` also form a labelled set for training the OCR.
 
 ## Per run (`<run>/derived/`)
 

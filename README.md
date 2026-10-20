@@ -6,7 +6,7 @@ Aid4SME Dashboard records, in one run and without re-encoding:
 
 - two optical video streams and two thermal video streams from HIKMICRO / Hikvision bi-spectrum cameras,
 - the radiometric temperature matrix of each thermal sensor (°C per pixel, about once per second),
-- optionally, pictures of the machine's screen from a Keyence IV3 camera (process values themselves come from the machine's own cycle export),
+- pictures of the machine's screen from a Keyence IV3 camera: the only live source of the process values (the machine's own cycle export is available only afterwards, by USB),
 - the operator's run details, regions of interest, notes and a 3D model of the part.
 
 Everything is started and stopped from a local web dashboard, in English or Slovenian. Each run becomes one self-describing folder that a training pipeline can use directly.
@@ -314,10 +314,14 @@ records, for every image: the time the trigger was sent, the time the camera ans
 time the file finished transferring, the file name and size, and the camera's own trigger
 number, timestamp and result status.
 
-**OCR is not needed.** The MC6 cycle export (see *Building the dataset*) contains every value
-shown on the screen, exactly, plus about 80 more per shot. The IV3 pictures are optional: they
-are listed per run in `derived/keyence.csv` and per cycle in `dataset/run_cycles.csv`, and are
-useful for spot checks and as a fallback for reading the machine clock.
+**Training uses the MC6 export; inference needs OCR.** The MC6 cycle export (see *Building the
+dataset*) contains every value shown on the screen, exactly, plus about 80 more per shot, but it
+is saved to USB after the runs, so it exists only offline. It is the source of process values for
+training. In live operation the process values must come from OCR of these IV3 pictures, so keep
+the IV3 recording on. The pictures are listed per run in `derived/keyence.csv` and per cycle in
+`dataset/run_cycles.csv`; paired with the MC6 export they form a labelled set for training and
+validating the OCR itself (every picture shows the last ten cycles, whose exact values are in
+`dataset/cycles.csv`).
 
 The photograph's time is taken as the midpoint between the trigger leaving and the camera
 answering, so the FTP transfer afterwards doesn't affect it. Expect a few milliseconds of
@@ -373,9 +377,21 @@ skipped, and runs with missing files (for example an interrupted copy) are liste
 and built automatically once the files are there. An interrupted build continues where it
 stopped. `--dry-run` shows what would be rebuilt.
 
-**OCR is not needed.** The MC6 export contains every value shown on the machine screen (checked
-against Keyence pictures at five points of the day) plus ~80 more. The Keyence pictures are
-still listed per cycle for spot checks.
+**MC6 export for training, OCR for inference.** The MC6 export contains every value shown on the
+machine screen (checked against Keyence pictures at five points of the day) plus ~80 more, but it
+is only available after the runs (USB). Use it for training labels and for validating the OCR;
+a model meant to run live may only use inputs that OCR of the IV3 pictures can provide (the
+screen shows cycle time, plasticising time and stroke, injection time, cushion, switch-over and
+peak melt pressure, switch-over position and oil temperature).
+
+**Thermal summary.** After a build, `tools/thermal_summary.py` writes
+`dataset/thermal_at_open.csv`: per run, temperature statistics of each camera's radiometric
+region in the first matrix 1-5 s after the mould opened, plus the whole-run p99 maximum and
+median (cam1 sees the part in the mould, cam2 the part carried out by the robot).
+
+```bat
+python tools\thermal_summary.py D:\aid4sme_data
+```
 
 ---
 
